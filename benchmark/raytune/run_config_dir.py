@@ -38,7 +38,7 @@ from benchmark.benchmark_registry import create_benchmark_instance
 from sparse_attention_hub.adapters.huggingface import ModelAdapterHF
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
 from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
-from utility import deserialize_sparse_config
+from config_builders.utility import deserialize_sparse_config
 
 
 

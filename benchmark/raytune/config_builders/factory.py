@@ -59,9 +59,10 @@ def get_all_config_builders() -> Dict[str, BaseConfigBuilder]:
 
 
 def build_all_configs(
-    weight_file: Optional[str] = None,
-    objective: str = "default",
-    builder_names: Optional[List[str]] = None,
+    model_config: Dict[str, str],
+    sparsity_objectives: List[int],
+    memory_objectives: List[int],
+    builder_names: List[str],
     **kwargs
 ) -> Tuple[List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]], 
            List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]]]:
@@ -76,18 +77,16 @@ def build_all_configs(
     Returns:
         Tuple of (optimal_configs, to_optimize_configs) aggregated from all builders
     """
-    if builder_names is None:
-        builders = get_all_config_builders()
-    else:
-        builders = {name: get_config_builder(name) for name in builder_names}
+    builders: Dict[str, BaseConfigBuilder] = {name: get_config_builder(name) for name in builder_names}
     
     all_optimal_configs: List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]] = []
     all_to_optimize_configs: List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]] = []
     
     for builder_name, builder in builders.items():
         optimal_configs, to_optimize_configs = builder.build_configs(
-            weight_file=weight_file,
-            objective=objective,
+            model_config=model_config,
+            sparsity_objectives=sparsity_objectives,
+            memory_objectives=memory_objectives,
             **kwargs
         )
         all_optimal_configs.extend(optimal_configs)

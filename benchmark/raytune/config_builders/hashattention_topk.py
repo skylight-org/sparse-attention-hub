@@ -1,6 +1,6 @@
 """Configuration builder for HashAttention TopK attention."""
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import (
@@ -12,6 +12,10 @@ from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.impl
 from .base import BaseConfigBuilder
 from .factory import register_builder
 from .utility import get_masker_list_name
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @register_builder("hashattention_topk")
@@ -20,29 +24,38 @@ class HashAttentionTopKConfigBuilder(BaseConfigBuilder):
     
     def build_configs(
         self,
-        weight_file: Optional[str] = None,
-        objective: str = "default",
+        model_config: Dict[str, str],
+        sparsity_objectives: List[int],
+        memory_objectives: List[int],
         **kwargs
     ) -> Tuple[List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]], 
                List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]]]:
         """Get all HashAttention TopK attention configurations.
-        
-        Returns list of (name, full_config, masker_classes) tuples.
-        
-        Note: The configs returned here are only used to determine which masker classes
-        to use. The actual parameter values will be determined by Ray Tune search.
+
+        Uses:
+            sparsity_objectives: List[int] - List of sparsity objectives to build the configurations.
+            model_config: Dict[str, str] - Model configuration (hash_attention_weight_file extracted from it)
+
+        Ignores:
+            memory_objectives: List[int] - List of memory objectives
         
         Returns:
             Tuple of (optimal_configs, to_optimize_configs)
         """
-        assert weight_file is not None, "Weight file is required for HashAttention Masker"
+        weight_file: str = model_config.get("hash_attention_weight_file")
+        
         
         optimal_configs: List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]] = []
         to_optimize_configs: List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]] = []
 
-        for heavy_size in [0.02, 0.05, 0.1, 0.2]:
+        if not weight_file or not os.path.isfile(weight_file):
+            logger.warning(f"Weight file {weight_file} for model {model_config['model_name']} does not exist. Skipping HashAttention TopK configurations.")
+            return optimal_configs, to_optimize_configs
+
+        for sparsity_objective in sparsity_objectives:
+            heavy_size: float = float(sparsity_objective) / 100.0
             classes = [SinkMaskerConfig, LocalMaskerConfig, HashAttentionTopKMaskerConfig]
-            name: str = get_masker_list_name(classes, other_params={"heavy_size": heavy_size})
+            name: str = get_masker_list_name(classes, other_params={"builder": "hashattention_topk", "sparsity_obj": sparsity_objective})
             
             config = ResearchAttentionConfig(masker_configs=[
                 SinkMaskerConfig(sink_size=128),
@@ -56,6 +69,11 @@ class HashAttentionTopKConfigBuilder(BaseConfigBuilder):
                     hat_weight_file=weight_file
                 ),
             ])
+            # Set validity to default (doesn't depend on memory objectives)
+            config.validity_constraint = lambda config: True
+            # Set objective function
+            config.objective = sparsity_objective
+            
             optimal_configs.append((name, config, classes))
         
         return optimal_configs, to_optimize_configs

@@ -76,6 +76,8 @@ class CompositeConfigOptimizer(SparseConfigOptimizer):
         new_config =  ResearchAttentionConfig(masker_configs=masker_instances)
         if hasattr(self.research_attention_config, 'validity_constraint'):
             new_config.validity_constraint = self.research_attention_config.validity_constraint
+        if hasattr(self.research_attention_config, 'objective'):
+            new_config.objective = self.research_attention_config.objective
         return new_config
 
 def create_optimizer(research_attention_config: Optional[ResearchAttentionConfig] = None) -> SparseConfigOptimizer:

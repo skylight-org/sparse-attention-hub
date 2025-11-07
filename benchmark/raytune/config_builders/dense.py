@@ -1,6 +1,6 @@
 """Configuration builder for dense (no sparse attention) model."""
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
 
@@ -14,17 +14,18 @@ class DenseConfigBuilder(BaseConfigBuilder):
     
     def build_configs(
         self,
-        weight_file: Optional[str] = None,
-        objective: str = "default",
+        model_config: Dict[str, str],
+        sparsity_objectives: List[int],
+        memory_objectives: List[int],
         **kwargs
     ) -> Tuple[List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]], 
                List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]]]:
         """Get dense baseline configuration.
-        
-        Returns list of (name, full_config, masker_classes) tuples.
-        
-        For dense models, sparse_config and masker_classes are None to indicate
-        no sparse attention is used.
+
+        Ignores:
+            sparsity_objectives: List[int] - List of sparsity objectives
+            memory_objectives: List[int] - List of memory objectives
+            model_config: Dict[str, str] - Model configuration
         
         Returns:
             Tuple of (optimal_configs, to_optimize_configs)
@@ -33,6 +34,8 @@ class DenseConfigBuilder(BaseConfigBuilder):
         to_optimize_configs: List[Tuple[str, Optional[ResearchAttentionConfig], Optional[List]]] = []
 
         # Dense baseline: no sparse attention, so sparse_config and masker_classes are None
+        # Since dense doesn't depend on sparsity or memory objectives, we just return a single config
+        # with None values (no sparse attention configuration needed)
         optimal_configs.append(("dense", None, None))
         
         return optimal_configs, to_optimize_configs

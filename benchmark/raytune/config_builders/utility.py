@@ -67,13 +67,13 @@ def create_sparsity_objective(target_density: float, penalty_weight: float = 10.
 
 # Pre-defined objective functions for common sparsity levels
 OBJECTIVE_FUNCTIONS = {
-    "sparsity_2": create_sparsity_objective(0.02),
-    "sparsity_5": create_sparsity_objective(0.05),
-    "sparsity_10": create_sparsity_objective(0.10),
-    "sparsity_15": create_sparsity_objective(0.15),
-    "sparsity_20": create_sparsity_objective(0.20),
-    "sparsity_25": create_sparsity_objective(0.25),
-    "default": lambda error, density: error + 0.1 * density + (5.0 if density > 0.5 else 0.0),
+    2: create_sparsity_objective(0.02),
+    5: create_sparsity_objective(0.05),
+    10: create_sparsity_objective(0.10),
+    15: create_sparsity_objective(0.15),
+    20: create_sparsity_objective(0.20),
+    25: create_sparsity_objective(0.25),
+    -1: lambda error, density: error + 0.1 * density + (5.0 if density > 0.5 else 0.0),
 }
 
 

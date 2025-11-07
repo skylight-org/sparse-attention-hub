@@ -296,10 +296,10 @@ def progress_reporter(total_tasks: int, result_queue: RayQueue) -> None:
 
 def main(
     configs_dir: str,
-    benchmark_results_dir: str = "./benchmark_vt_full_10pct",
+    benchmark_results_dir: str = "/data/apdesai/DO_NOT_DELETE/sparse_attention_hub",
     max_new_tokens: int = 1000,
     max_context_length: int = 100000,
-    max_requests: int = 1000,
+    max_requests: int = 100,
     actors_per_gpu: Optional[int] = None
 ):
     """Ray-based parallel benchmark runner with efficient resource management.

@@ -27,7 +27,7 @@ from config_builders.utility import (
 )
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
 from benchmark_helper import BenchmarkHelper
-
+from OPTIMIZATION_EXPERIMENT import USE_TIMESTAMP_FOR_RESULTS_DIR
 
 class ConfigSearchManager:
     """Manages Phase 1: Hyperparameter search for optimal configs.
@@ -36,7 +36,11 @@ class ConfigSearchManager:
     sparse attention configurations for given model/task combinations.
     """
     
-    def __init__(self, base_config: Dict[str, any]) -> None:
+    def __init__(self, optimal_configs_dir: str, 
+    force_search: bool, 
+    generation_kwargs: Dict[str, any], 
+    request_kwargs: Dict[str, any],
+    ray_results_dir: str) -> None:
         """Initialize the search manager with configuration.
         
         Args:
@@ -44,13 +48,18 @@ class ConfigSearchManager:
                 - optimal_configs_dir: Directory to save optimal configs
                 - force_search: Whether to force re-search even if configs exist
         """
-        self.config: Dict[str, any] = base_config
         # Add timestamp to the results directory
-        timestamp: str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_dir: Path = Path(base_config["optimal_configs_dir"])
-        self.results_dir: Path = base_dir / f"run_{timestamp}"
-        self.results_dir.mkdir(parents=True, exist_ok=True)
-        self.timestamp: str = timestamp
+        if USE_TIMESTAMP_FOR_RESULTS_DIR:
+            timestamp: str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        else:
+            timestamp: str = "default"
+        self.results_dir: str = os.path.join(optimal_configs_dir, f"run_{timestamp}")
+        os.makedirs(self.results_dir, exist_ok=True)
+
+        self.force_search: bool = force_search
+        self.generation_kwargs: Dict[str, any] = generation_kwargs
+        self.request_kwargs: Dict[str, any] = request_kwargs
+        self.ray_results_dir: Path = ray_results_dir
         print(f"Saving optimal configs to: {self.results_dir}")
         
     def search_optimal_config(
@@ -75,10 +84,10 @@ class ConfigSearchManager:
         Returns:
             OptimalConfig containing the best configuration found
         """
-        config_file: Path = self.results_dir / f"{model}_{task}_{masker_name}.json".replace("/", "_")
+        config_file: Path = os.path.join(self.results_dir, f"{model}_{task}_{masker_name}.json".replace("/", "_"))
         
         # Check if already exists
-        if config_file.exists() and not self.config.get("force_search", False):
+        if os.path.exists(config_file) and not self.force_search:
             print(f"  → Loading existing config")
             return self._load_config(config_file)
         
@@ -118,7 +127,11 @@ class ConfigSearchManager:
             
             # Create objective function
             def objective(trial_config: Dict[str, any]) -> Dict[str, float]:
-                runner: BenchmarkHelper = BenchmarkHelper(self.config)
+                runner: BenchmarkHelper = BenchmarkHelper(
+                    base_result_dir=self.results_dir,
+                    generation_kwargs=self.generation_kwargs,
+                    request_kwargs=self.request_kwargs
+                )
                 attention_config = optimizer.create_config_from_params(trial_config)
                 score: float
                 density: float
@@ -126,18 +139,18 @@ class ConfigSearchManager:
                 score, density, error = runner(attention_config, task, model)
                 return {"combined_score": score, "density": density, "error": error}
             
-            # ### run a sample objective to ensure there are no errors
-            print("="*10, "Running a short test objective to ensure there are no errors", flush=True)
-            sample_config: Dict[str, float] = {
-                "AdaptiveSamplingMaskerConfig_base_rate_sampling": 0.1,
-                "AdaptiveSamplingMaskerConfig_epsilon": 0.25,
-                "AdaptiveSamplingMaskerConfig_delta": 0.25
-            }
-            result: Dict[str, float] = objective(sample_config)
-            print("="*10, "Successfully ran a short test objective", flush=True)
-            print(sample_config)
-            print(result)
-            print("="*100, flush=True)
+            # # ### run a sample objective to ensure there are no errors
+            # print("="*10, "Running a short test objective to ensure there are no errors", flush=True)
+            # sample_config: Dict[str, float] = {
+            #     "AdaptiveSamplingMaskerConfig_base_rate_sampling": 0.1,
+            #     "AdaptiveSamplingMaskerConfig_epsilon": 0.25,
+            #     "AdaptiveSamplingMaskerConfig_delta": 0.25
+            # }
+            # result: Dict[str, float] = objective(sample_config)
+            # print("="*10, "Successfully ran a short test objective", flush=True)
+            # print(sample_config)
+            # print(result)
+            # print("="*100, flush=True)
             
             # Run Ray Tune
             sanitized_name: str = f"{model}_{task}_{masker_name}".replace("/", "_")
@@ -147,7 +160,7 @@ class ConfigSearchManager:
                 metric="combined_score",
                 mode="min",
                 resources_per_trial={"CPU": 1, "GPU": 1.0 / actors_per_gpu},
-                storage_path=os.path.abspath(self.config["ray_results_dir"]),
+                storage_path=self.ray_results_dir,
                 name=sanitized_name,
                 verbose=1,  # Show Ray Tune progress
                 stop={"training_iteration": 1},  # One evaluation per config
@@ -171,21 +184,21 @@ class ConfigSearchManager:
                 trials_info.append(trial_info)
             
             # Save trial details to separate file
-            trials_file: Path = self.results_dir / f"{model}_{task}_{masker_name}_trials.json".replace("/", "_")
+            trials_file: Path = os.path.join(self.results_dir, f"{model}_{task}_{masker_name}_trials.json".replace("/", "_"))
             with open(trials_file, "w") as f:
                 json.dump({
                     "model": model,
                     "task": task,
                     "masker_name": masker_name,
-                    "objective_function": self.config.get("objective_function", "default"),
+                    "objective_function": full_sparse_config.objective if full_sparse_config.objective else "None",
                     "best_trial_id": best_trial.trial_id,
                     "trials": trials_info,
-                    "analysis_dataframe_path": str(self.results_dir / f"{model}_{task}_{masker_name}_analysis.csv".replace("/", "_"))
+                    "analysis_dataframe_path": str(os.path.join(self.results_dir, f"{model}_{task}_{masker_name}_analysis.csv".replace("/", "_")))
                 }, f, indent=2)
             
             # Save Ray analysis dataframe for detailed analysis
             df = analysis.dataframe()
-            df.to_csv(self.results_dir / f"{model}_{task}_{masker_name}_analysis.csv".replace("/", "_"), index=False)
+            df.to_csv(os.path.join(self.results_dir, f"{model}_{task}_{masker_name}_analysis.csv".replace("/", "_")), index=False)
             
             optimal = OptimalConfig(
                 model=model,

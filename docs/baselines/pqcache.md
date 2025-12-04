@@ -48,7 +48,18 @@ Some sample results with above config.
 
 
 ## 5. Performance (Sanity check for research framework):
-TBD
+
+32K context, Q=1
+
+🔍 Comparative Analysis:
+============================================================
+📈 Masker Overhead Analysis:
+   - Sparse Attention:     0.867 ms
+   - Baseline (no maskers): 0.512 ms
+   - Masker overhead:      0.355 ms (69.5%)
+
+============================================================
+
 
 ## References
 [1] Zhang, H., Ji, X., Chen, Y., Fu, F., Miao, X., Nie, X., Chen, W. and Cui, B., 2025. Pqcache: Product quantization-based kvcache for long context llm inference. Proceedings of the ACM on Management of Data, 3(3), pp.1-30.

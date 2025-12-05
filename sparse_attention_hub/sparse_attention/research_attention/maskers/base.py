@@ -145,7 +145,7 @@ class ResearchMasker(ABC):
             shape=mask_shape,
             row_wise_idx=indices,
             data=data,
-            mask_type="index",
+            mask_type="dense",
             dtype=dtype,
         )
 

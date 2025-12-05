@@ -15,4 +15,5 @@ Follow these instructions when writing any python code
     b. Unreliable dependencies
     c. Long-lived or reused code (e.g. libraries, shared modules)
 6. Prioritize readability and maintainability over protecting against unrealistic edge cases.
+7. Do not use try catch paradigm as much as possible. It should be used only when it is actually required.
 

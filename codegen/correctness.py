@@ -107,7 +107,7 @@ def run_custom_attention_equivalence_check(
     batch_size: int = 2
     num_heads: int = 4
     seq_len_q: int = 1
-    seq_len_k: int = 16
+    seq_len_k: int = 16000
     head_dim: int = 32
 
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

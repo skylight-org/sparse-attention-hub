@@ -744,7 +744,9 @@ class Mask:
 
         mask_dense = self.get_dense_mask()
         valid_mask = mask_dense != 0
-        result = input_tensor * (1.0 / (mask_dense + 1e-6) * valid_mask)
+        # Avoid overflow in float16 by applying valid_mask before division
+        result = torch.zeros_like(input_tensor)
+        result[valid_mask] = input_tensor[valid_mask] / (mask_dense[valid_mask] + 1e-6)
         return result
 
     def apply_inv_mask_sparse(self, input_tensor: torch.Tensor) -> torch.Tensor:

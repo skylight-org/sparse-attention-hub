@@ -17,13 +17,14 @@ from sparse_attention_hub.sparse_attention.research_attention.maskers.base impor
     MaskerConfig,
     ResearchMasker,
 )
+from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import SinkMaskerConfig, LocalMaskerConfig
 from sparse_attention_hub.sparse_attention.utils.mask import Mask
 from sparse_attention_hub.sparse_attention.utils.mask_attention_utils import (
     get_masked_attention_output,
 )
 
 sparse_attention_config: ResearchAttentionConfig = ResearchAttentionConfig(
-    masker_configs=[]
+    masker_configs=[SinkMaskerConfig(sink_size=128), LocalMaskerConfig(window_size=128)]
 )
 
 def custom_indexer_hub(

@@ -1,85 +1,192 @@
 #!/usr/bin/env python3
 """
-Simple Benchmark Example
+Grid search over RACEBucketMasker hyperparameters on Ruler32K.
 
-A beginner-friendly example showing how to run a basic benchmark comparison
-between dense and sparse attention using the sparse-attention-hub framework.
+Order of execution:
 
-This example uses the MockBenchmark (5 simple samples) for quick demonstration:
-- Easy-to-understand reading comprehension questions
-- Short contexts (<250 words each)
-- Fast execution for testing and learning
+  For each dataset in:
+      vt, fwe, niah_multikey_1, niah_multikey_2, niah_multikey_3, qa_1, qa_2
 
-Usage:
-    python 04_simple_benchmark_example.py
+    Run ALL hyperparameter configs:
+      (K, L, top_t, heavy_size)
+
+For each (dataset, config), this script:
+  - builds a sparse attention config using Sink + Local + RACEBucketMasker
+  - loads the model with that config
+  - runs Ruler32K on that single dataset
+  - reads metrics.json from:
+        /home/ac508/sparse-attention-hub/test_results.5cpt.topk.2/metrics.json
+  - prints and appends a line like:
+        K=5 L=8  top_t=2 heavy=0.2 | qa_2=36.0
+
+All files live in:
+    /home/ac508/sparse-attention-hub/test_results.5cpt.topk.2/
+
+  - metrics.json   (overwritten for each run)
+  - results.txt    (accumulates all lines, grouped by dataset)
 """
 
 import os
-import time
 from pathlib import Path
-
+import sys
+import json
+import itertools
+import gc
 import torch
 
-# Ensure we're in the correct directory and add to Python path
-import sys
+# ---------------------------------------------------------------------
+# Project setup: make sure we're inside sparse-attention-hub
+# ---------------------------------------------------------------------
+os.chdir("/scratch/sj157/sparse-attention-hub")
+sys.path.insert(0, "/scratch/sj157/sparse-attention-hub")
 
-# Change to directory two levels below current location
-os.chdir('/home/ubuntu/sparse-attention-hub')
-sys.path.insert(0, '/home/ubuntu/sparse-attention-hub')
-
-from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import (
-    DoubleSparsityTopKMaskerConfig
+    SinkMaskerConfig,
+    LocalMaskerConfig,
+    BucketMaskerConfig,
 )
-
-#from benchmark.longbench import LongBench
 from benchmark.ruler32k import Ruler32K
 from sparse_attention_hub.adapters import ModelAdapterHF
 
+
+# ---------------------------------------------------------------------
+# Results: SAME DIRECTORY AS metrics.json
+# ---------------------------------------------------------------------
+RESULTS_ROOT = Path("/scratch/sj157/sparse-attention-hub/test_results.5cpt.topk.2")
+RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
+
+METRICS_PATH = RESULTS_ROOT / "metrics.json"
+LOG_PATH = RESULTS_ROOT / "results.txt"
+
+# Datasets you want, processed ONE BY ONE (outer loop)
+RULER_DATASETS = [
+    # "vt",
+    # "fwe",
+    # "niah_multikey_2",
+    "niah_multikey_3",
+    # "qa_1",
+    # "qa_2",
+]
+
+
+# ---------------------------------------------------------------------
+# Logging helper: PRINT + FILE, with alignment
+# ---------------------------------------------------------------------
+def append_result_line(K, L, top_t, heavy_size, dataset_name, score_value):
+    """
+    Print and append one aligned line, e.g.
+
+    K=5 L=8  top_t=2 heavy=0.2 | qa_2=36.0
+    K=5 L=10 top_t=2 heavy=0.2 | qa_2=48.0
+    """
+    # L field padded so L=8 and L=10 align:
+    L_field = f"L={L:<2}"  # width 2 after "L="
+
+    line = (
+        f"K={K} {L_field} top_t={top_t} heavy={heavy_size} | "
+        f"{dataset_name}={score_value}"
+    )
+
+    # Print to terminal
+    print(line)
+
+    # Append to file
+    with open(LOG_PATH, "a") as f:
+        f.write(line + "\n")
+
+
+# ---------------------------------------------------------------------
+# Run ONE (dataset, config) pair
+# ---------------------------------------------------------------------
+def run_single(dataset_name, K, L, top_t, heavy_size, device, model_name):
+    adapter = None
+    benchmark = None
+
+    try:
+        print(
+            f"\n=== Dataset: {dataset_name} | "
+            f"CONFIG: K={K}, L={L}, top_t={top_t}, heavy={heavy_size} ==="
+        )
+
+        # Build sparse attention config for this run
+        sparse_attention_config = ResearchAttentionConfig(masker_configs=[
+            SinkMaskerConfig(sink_size=128),
+            LocalMaskerConfig(window_size=128),
+            BucketMaskerConfig(K=K, L=L, top_t=top_t, heavy_size=heavy_size),
+        ])
+
+        # Load model for this config
+        adapter = ModelAdapterHF(
+            model_name=model_name,
+            sparse_attention_config=sparse_attention_config,
+            model_kwargs={"torch_dtype": torch.bfloat16},
+            generate_kwargs={"max_new_tokens": 32},
+            device=device,
+        )
+
+        # Single-dataset Ruler32K
+        benchmark = Ruler32K([dataset_name])
+
+        benchmark.run_benchmark(
+            adapter,
+            RESULTS_ROOT,
+            request_kwargs={"max_requests": 50, "max_context_length": 32000},
+        )
+
+        # Read metrics.json for THIS dataset + config
+        if METRICS_PATH.exists():
+            with open(METRICS_PATH, "r") as f:
+                metrics = json.load(f)
+
+            task_scores = metrics.get("task_scores", {})
+            if dataset_name in task_scores and len(task_scores[dataset_name]) > 0:
+                metric_name = list(task_scores[dataset_name].keys())[0]
+                score_value = task_scores[dataset_name][metric_name]
+            else:
+                score_value = "NaN"
+        else:
+            score_value = "NaN"
+
+        append_result_line(K, L, top_t, heavy_size, dataset_name, score_value)
+
+    finally:
+        # Free memory for next run
+        del benchmark
+        del adapter
+        gc.collect()
+        torch.cuda.empty_cache()
+
+
+# ---------------------------------------------------------------------
+# Main: OUTER LOOP = DATASET, INNER LOOP = CONFIGS
+# ---------------------------------------------------------------------
 def main():
     model_name = "meta-llama/Llama-3.1-8B-Instruct"
-    device = 0
+    device = "cuda"
 
-    # sorted_channel_file is available in the author's repository
-    # https://github.com/andy-yang-1/DoubleSparse/tree/main/config
-    # TODO: is there a better way to use the paths in scripts?
-    sparse_attention_config = ResearchAttentionConfig(masker_configs=[
-        DoubleSparsityTopKMaskerConfig(
-            heavy_size=4096,
-            group_factor=2,
-            label_bits=2,
-            sorted_channel_file="/home/ubuntu/DoubleSparse/config/meta-llama/Llama-3.1-8B-Instruct.json",
-            channel_selection="q_proj"
-        )
-    ])
-    
-    print("  ✓ Loading model...")
-     # use whichever is available
-     # flash_attention_3 is for Hopper GPU
-     # commonly flash_attention_2 is supported on other GPUs
-    adapter = ModelAdapterHF(
-        model_name=model_name,
-        sparse_attention_config=sparse_attention_config,
-        model_kwargs= {"torch_dtype": torch.bfloat16, "attn_implementation": "flash_attention_3"},
-        device=device
-    )
-    
-    #benchmark = LongBench(['passage_retrieval_en'])
-    benchmark = Ruler32K(['vt'])
+    # Start fresh log
+    if LOG_PATH.exists():
+        LOG_PATH.unlink()
 
-    result_dir = Path("./test_results.vt.4096.2.2.q_proj/")
-    result_dir.mkdir(exist_ok=True)
-    metric_logger = MicroMetricLogger()
-    metric_logger.configure_logging(
-            log_path=result_dir,
-            enabled_metrics=[
-                "research_attention_density",
-                "research_attention_output_error",
-            ],
-        )
-    metric_logger.flush()
-    benchmark.run_benchmark(adapter, result_dir, request_kwargs={"max_requests": 10, "max_context_length": 1000000}, generation_kwargs={"max_new_tokens": 500})
-    
+    # Hyperparameter grid
+    K_list = [4]
+    L_list = list(range(10, 89))
+    top_t_list = [4, 5]
+    heavy_list = [0.02]
+
+    # OUTER: dataset
+    # INNER: all hyperparameter configs
+    for ds in RULER_DATASETS:
+        print(f"\n\n============================")
+        print(f"### DATASET: {ds}")
+        print(f"============================")
+
+        for K, L, top_t, heavy_size in itertools.product(
+            K_list, L_list, top_t_list, heavy_list
+        ):
+            run_single(ds, K, L, top_t, heavy_size, device, model_name)
+
+
 if __name__ == "__main__":
-    main() 
+    main()

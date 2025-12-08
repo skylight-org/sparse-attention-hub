@@ -34,6 +34,7 @@ from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.impl
     LocalMaskerConfig,
     SinkMaskerConfig,
     OracleTopKConfig,
+    BucketMaskerConfig
 )
 from sparse_attention_hub.sparse_attention.research_attention.maskers.sampling.implementations import (
     RandomSamplingMaskerConfig,
@@ -56,7 +57,10 @@ def create_sample_sparse_attention_config() -> ResearchAttentionConfig:
         LocalMaskerConfig(window_size=512),
         
         # Oracle top-k masker - select top 10% most important tokens
-        OracleTopKConfig(heavy_size=0.1),  # 10% of sequence length
+        # OracleTopKConfig(heavy_size=0.1),  # 10% of sequence length
+
+        # Bucket masker - select top 10% most important tokens
+        BucketMaskerConfig(K=4, L=30, top_t=4, heavy_size=0.1),
         
         ## Random sampling masker - sample 5% of remaining positions
         #RandomSamplingMaskerConfig(sampling_rate=0.05),

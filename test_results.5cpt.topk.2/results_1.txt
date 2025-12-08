@@ -28,3 +28,11 @@ K=4 L=14 top_t=5 heavy=0.2 | niah_multikey_3=80.0
 K=4 L=15 top_t=4 heavy=0.2 | niah_multikey_3=76.0
 K=4 L=15 top_t=5 heavy=0.2 | niah_multikey_3=86.0
 K=4 L=16 top_t=4 heavy=0.2 | niah_multikey_3=68.0
+K=4 L=16 top_t=5 heavy=0.2 | niah_multikey_3=86.0
+K=4 L=17 top_t=4 heavy=0.2 | niah_multikey_3=80.0
+K=4 L=17 top_t=5 heavy=0.2 | niah_multikey_3=80.0
+K=4 L=18 top_t=4 heavy=0.2 | niah_multikey_3=82.0
+K=4 L=18 top_t=5 heavy=0.2 | niah_multikey_3=88.0
+K=4 L=19 top_t=4 heavy=0.2 | niah_multikey_3=84.0
+K=4 L=19 top_t=5 heavy=0.2 | niah_multikey_3=84.0
+K=4 L=20 top_t=4 heavy=0.2 | niah_multikey_3=82.0

@@ -25,3 +25,10 @@ K=4 L=13 top_t=5 heavy=0.02 | niah_multikey_3=0.0
 K=4 L=14 top_t=4 heavy=0.02 | niah_multikey_3=0.0
 K=4 L=14 top_t=5 heavy=0.02 | niah_multikey_3=0.0
 K=4 L=15 top_t=4 heavy=0.02 | niah_multikey_3=0.0
+K=4 L=15 top_t=5 heavy=0.02 | niah_multikey_3=0.0
+K=4 L=16 top_t=4 heavy=0.02 | niah_multikey_3=0.0
+K=4 L=16 top_t=5 heavy=0.02 | niah_multikey_3=0.0
+K=4 L=17 top_t=4 heavy=0.02 | niah_multikey_3=0.0
+K=4 L=17 top_t=5 heavy=0.02 | niah_multikey_3=0.0
+K=4 L=18 top_t=4 heavy=0.02 | niah_multikey_3=0.0
+K=4 L=18 top_t=5 heavy=0.02 | niah_multikey_3=0.0

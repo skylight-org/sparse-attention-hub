@@ -155,11 +155,33 @@ Interpretation:
 - **High value norm ⇒ key has potential to contribute strongly**  
 - The product balances structural similarity (hashing) and content magnitude (values)
 
-### 6.3 Top-K Selection
 
-Among all candidate keys:
+### Example config in sparse-attention-hub
+```
+  config = ResearchAttentionConfig(masker_configs=[
+      SinkMaskerConfig(sink_size=128),
+      LocalMaskerConfig(window_size=128),
+      BucketMaskerConfig(K=4, L=31, top_t=4, heavy_size=0.2),
+  ])
+```
 
-1. Mask out all non-candidates.
-2. Select the **Top-K** keys by `score(q,i)` for each query to compute attention on.
+### Experimental Setup
+Some datasets from the RULER benchmark
+
+In general, as the sparsity drops, there is a need to increase L (hash tables). 
+  - Full recovery for 20% sparsity can be done with 30-32 tables.
+  - Full recovery for 10% sparsity can be done with 50-32 tables.
+  - Full recovery for 5% sparsity can be done with 78-80 tables.
+
+Our Results with model - meta-llama/Llama-3.1-8B-Instruct:
+
+| Dataset        | Token Budget 1600 (0.05) | Token Budget 3200 (0.10) | Token Budget 6400 (0.20) |
+|:-------------- |:------------------------:|:-------------------------:|:-------------------------:|
+| **vt**         |                |                 |         92        |
+| **fwe**        |                |                 |         93.3      |
+| **multikey_2** |                |         94        |          96       |
+| **qa_2**       |                |          56       |          58       |
+| **qa_1**       |                |          80       |          80       |
+| **multikey_3** |                |        100         |        100         |
 
 

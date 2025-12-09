@@ -11,7 +11,6 @@ from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.impl
     pack_bits,
 )
 
-
 @pytest.mark.unit
 class TestBucketUtils:
     def test_get_hyper_planes_basic(self):
@@ -195,21 +194,17 @@ class TestBucketUtils:
         # For q0: in table 0 pick bucket 1, in table 1 pick bucket 0
         # For q1: in table 0 pick bucket 2, in table 1 pick bucket 1
         top_buckets = torch.tensor(
-            [[  # B
-                [  # H
-                    [  # Q
-                        [  # q0
-                            [1],  # L=0 -> bucket 1
-                            [0],  # L=1 -> bucket 0
-                        ],
-                        [  # q1
-                            [2],  # L=0 -> bucket 2
-                            [1],  # L=1 -> bucket 1
-                        ],
-                    ]
-                ]
-            ]]
-        )  # [B,H,Q,L,top_t] = [1,1,2,2,1]
+            [[[
+                [
+                    [1],  # q0, L=0
+                    [0],  # q0, L=1
+                ],
+                [
+                    [2],  # q1, L=0
+                    [1],  # q1, L=1
+                ],
+            ]]]
+        )  # shape: [1, 1, 2, 2, 1]
 
         candidate_mask, collision_counts = get_collision_counts(
             key_buckets, top_buckets

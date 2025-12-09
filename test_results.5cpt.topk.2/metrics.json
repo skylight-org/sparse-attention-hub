@@ -1,12 +1,12 @@
 {
-  "overall_score": 82.0,
+  "overall_score": 16.0,
   "task_scores": {
     "niah_multikey_3": {
-      "string_match": 82.0
+      "string_match": 16.0
     }
   },
   "context_length_scores": {
-    "32768": 82.0
+    "32768": 16.0
   },
   "summary": {
     "total_tasks": 1,

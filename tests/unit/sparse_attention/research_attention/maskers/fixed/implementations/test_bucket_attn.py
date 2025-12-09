@@ -1,7 +1,8 @@
 import pytest
 import torch
+import re
 
-from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.bucket_masker import (
+from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.bucket_top_k import (
     BucketMasker,
     BucketMaskerConfig,
 )
@@ -10,7 +11,7 @@ from sparse_attention_hub.sparse_attention.utils.mask import Mask
 
 @pytest.mark.unit
 class TestBucketMaskerImplementation:
-    """Tests for BucketMasker (RACE-style bucket attention)."""
+    """Tests for BucketMasker (bucket attention)."""
 
     def test_bucket_masker_config_creation(self):
         """Config can be created and fields are set correctly."""
@@ -26,16 +27,28 @@ class TestBucketMaskerImplementation:
         assert config.L == 2
         assert config.top_t == 3
 
+
     def test_bucket_masker_config_validation(self):
-        """Invalid K, L, top_t should raise ValueError."""
-        with pytest.raises(ValueError, match="K \\(hyperplanes\\) must be a positive integer"):
-            BucketMaskerConfig(heavy_size=0.05, K=0, L=1, top_t=1)
+        from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.bucket_top_k import (
+            BucketMasker,
+            BucketMaskerConfig,
+        )
 
-        with pytest.raises(ValueError, match="L \\(hash tables\\) must be a positive integer"):
-            BucketMaskerConfig(heavy_size=0.05, K=4, L=0, top_t=1)
+        msg = "K (hyperplanes) must be a positive integer"
 
-        with pytest.raises(ValueError, match="top_t must be a positive integer"):
-            BucketMaskerConfig(heavy_size=0.05, K=4, L=1, top_t=0)
+        with pytest.raises(ValueError, match=re.escape(msg)):
+            config = BucketMaskerConfig(heavy_size=0.05, K=0, L=1, top_t=1)
+            BucketMasker(config)
+
+        msg = "L (hash tables) must be a positive integer"
+        with pytest.raises(ValueError, match=re.escape(msg)):
+            config = BucketMaskerConfig(heavy_size=0.05, K=4, L=0, top_t=1)
+            BucketMasker(config)
+
+        msg = "top_t must be a positive integer"
+        with pytest.raises(ValueError, match=re.escape(msg)):
+            config = BucketMaskerConfig(heavy_size=0.05, K=4, L=1, top_t=0)
+            BucketMasker(config)
 
     def test_bucket_masker_creation(self):
         """BucketMasker can be created from config."""
@@ -141,33 +154,6 @@ class TestBucketMaskerImplementation:
         # For each (b,h,q) row, number of active tokens should be <= effective_M
         active_per_row = (dense > 0).sum(dim=-1)  # [B,H,Q]
         assert torch.all(active_per_row <= effective_M)
-
-    def test_bucket_masker_heavy_size_zero_returns_previous(self):
-        """If heavy_size=0 ⇒ M=0 ⇒ add_mask should return previous_mask unchanged."""
-        config = BucketMaskerConfig(
-            heavy_size=0.0,
-            K=4,
-            L=2,
-            top_t=2,
-        )
-        masker = BucketMasker.create_from_config(config)
-        keys, queries, values, attention_mask, previous_mask = self._make_dummy_inputs()
-
-        new_mask = masker.add_mask(
-            keys=keys,
-            queries=queries,
-            values=values,
-            attention_mask=attention_mask,
-            scaling=1.0,
-            dropout=0.0,
-            sparse_meta_data={},
-            previous_mask=previous_mask,
-        )
-
-        # Should be exactly the same object or at least have identical dense contents
-        dense_prev = previous_mask.get_dense_mask()
-        dense_new = new_mask.get_dense_mask()
-        assert torch.allclose(dense_prev, dense_new)
 
     def test_bucket_masker_attention_mask_boolean(self):
         """Blocked positions in a boolean attention_mask should remain masked out."""

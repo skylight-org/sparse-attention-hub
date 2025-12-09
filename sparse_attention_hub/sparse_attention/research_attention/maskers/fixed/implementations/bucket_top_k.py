@@ -28,7 +28,7 @@ from .utils.bucket_utils import (
 @dataclass
 class BucketMaskerConfig(TopKMaskerConfig):
     """
-    Minimal RACE-style masker config:
+    Minimal masker config:
 
       • K:      # of hyperplanes per table (buckets = 2**K)
       • L:      # of hash tables (independent sketches)
@@ -36,8 +36,7 @@ class BucketMaskerConfig(TopKMaskerConfig):
 
     heavy_size (inherited from TopKMaskerConfig) is used as the *sample size*:
       M = _calculate_effective_size(heavy_size, N_keys)
-    We select up to M keys from the union of selected-bucket tokens using a
-    RACE-style value-aware score.
+    We select up to M keys from the union of selected-bucket tokens using a value-aware score.
     """
     K: int = 4
     L: int = 1
@@ -47,7 +46,7 @@ class BucketMaskerConfig(TopKMaskerConfig):
 @MaskerRegistry.register(BucketMaskerConfig)
 class BucketMasker(TopKMasker):
     """
-    L-table RACE-like sparsity (mask-only):
+    L-table sparsity (mask-only):
 
       1) Hard SRP hash keys with L sets of K planes → bucket ids per table.
       2) Soft SRP hash queries per table (tanh + /√d vs hypercube corners).
@@ -182,11 +181,10 @@ class BucketMasker(TopKMasker):
         # 9a) Align values to heads and compute ||v_i|| per key
         v_rep = repeat_kv(values, _get_num_key_value_groups(queries, values))  # [B,H,N,Dv]
         v_mag = torch.linalg.vector_norm(v_rep.float(), ord=2, dim=-1)         # [B,H,N]
-        v_mag_expanded = v_mag.unsqueeze(2)                                    # [B,H,1,N]
 
         # 9b) Value-aware score: score[b,h,q,i] = (# collisions) * ||v_i||
         collision_counts_f = collision_counts.to(torch.float32)                # [B,H,Q,N]
-        raw_scores = collision_counts_f * v_mag_expanded                       # [B,H,Q,N]
+        raw_scores = collision_counts_f * v_mag.unsqueeze(2)                   # [B,H,Q,N]
 
         # 9c) Deterministic top-k on value-aware scores within candidates
         scores = raw_scores.masked_fill(~candidate_mask, -torch.inf)           # [B,H,Q,N]
@@ -195,18 +193,15 @@ class BucketMasker(TopKMasker):
         # 9d) Enforce per-row effective K = min(M, #candidates)
         cand_counts = candidate_mask.sum(dim=-1)                               # [B,H,Q]
         k_each = cand_counts.clamp_max(M)                                      # [B,H,Q]
-        keep = (
-            torch.arange(Km, device=keys_rep.device).view(1, 1, 1, Km)
-            < k_each.unsqueeze(-1)
-        )                                                                      # [B,H,Q,Km] bool
+        keep = (torch.arange(Km, device=keys_rep.device).view(1, 1, 1, Km) < k_each.unsqueeze(-1)) # [B,H,Q,Km] bool
 
         # 9e) Scatter to boolean mask (robust to ties / duplicates)
         acc = torch.zeros((B, H, Q, N), device=keys_rep.device, dtype=torch.int16)
         acc.scatter_add_(dim=-1, index=top_idx, src=keep.to(acc.dtype))
-        final_mask = acc > 0                                                   # [B,H,Q,N] bool
+        final_mask = acc > 0 # [B,H,Q,N] bool
 
         # Previous dense mask as probabilities in [0,1]
-        dense_prev = previous_mask.get_dense_mask()  # [B,H,Q,N]
+        dense_prev = previous_mask.get_dense_mask() # [B,H,Q,N]
         if not dense_prev.dtype.is_floating_point:
             dense_prev = dense_prev.to(scores.dtype)
         dense_prev = dense_prev.clamp_(0.0, 1.0)

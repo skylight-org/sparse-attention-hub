@@ -14,10 +14,10 @@
         "search_space": {}
       },
       {
-        "heavy_size": 0.2,
+        "heavy_size": 0.02,
         "K": 4,
-        "L": 20,
-        "top_t": 4
+        "L": 65,
+        "top_t": 5
       }
     ]
   },

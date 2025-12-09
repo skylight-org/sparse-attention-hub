@@ -1,8 +1,14 @@
 ---
 alwaysApply: false
 ---
-backend_dir: codegen/backends/flashinfer
-iteration_directory: {backend_dir}/workspace/%iteration
+backend_dir: codegen/backends/sparse_attention_hub_native
+iteration_directory: {backend_dir}/workspace/iter-%iteration
+
+run the following to active correct conda environment
+```
+source /workspace/anaconda3/bin/activate && conda activate sparse_attention_hub 
+```
+
 
 You are supposed to write an optimized cuda code for the function in {backend_dir}/gen_imperative_code.py named __indexer() which extracts the core logic of the sparse attention config defined in custom_attention_hub. You can identify parts of the code that should be written as a triton cuda kernel and used inside this function, including cases where the entire function can be written as a cuda kernel. 
 
@@ -17,7 +23,7 @@ python3 {backend_dir}/correctness.py --indexer-file {iteration_directory}/optimi
 
 Once correct optimized code implementing the plan is obtained, then you should profile the code using 
 ```
-CUDA_VISIBLE_DEVICES=7 python3 {backend_dir}/profile_indexer_hub.py --output {iteration_directory}/profile --indexer-file {iteration_directory}/optimized_indexer.py &> {iteration_directory}/profile.log 
+python3 {backend_dir}/profile_indexer_hub.py --output {iteration_directory}/profile_results --indexer-file {iteration_directory}/optimized_indexer.py &> {iteration_directory}/profile.log 
 ```
 
 Use the dumped {iteration_directory}/profile* files to make a concise summary file in {iteration_directory}/summary.md which should note 

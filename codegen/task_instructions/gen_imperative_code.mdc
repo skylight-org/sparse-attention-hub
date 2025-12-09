@@ -5,6 +5,7 @@ backend_dir=backends/sparse_attention_hub_native
 
 run the following to active correct conda environment
 ```
+source /workspace/anaconda3/bin/activate
 conda activate sparse_attention_hub 
 ```
 
@@ -23,5 +24,5 @@ The requirements are as follows,
 Once acheived, run the following profiling script.
 
 ```
-CUDA_VISIBLE_DEVICES=4 python3 codegen/backends/sparse_attention_hub_native/profile_indexer_hub.py --output codegen/backends/sparse_attention_hub_native/workspace/profile_results --indexer-file codegen/backends/sparse_attention_hub_native/workspace/gen_imperative_code.py --warmup-runs 10 --profile-runs 3 --timing-runs 100
+CUDA_VISIBLE_DEVICES=0 python3 codegen/backends/sparse_attention_hub_native/profile_indexer_hub.py --output codegen/backends/sparse_attention_hub_native/workspace/profile_results --indexer-file codegen/backends/sparse_attention_hub_native/workspace/gen_imperative_code.py --warmup-runs 10 --profile-runs 3 --timing-runs 100
 ```

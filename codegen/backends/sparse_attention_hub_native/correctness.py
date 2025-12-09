@@ -25,7 +25,7 @@ PROJECT_ROOT: str = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from codegen.custom_attention_hub import custom_attention as custom_attention_hub  # noqa: E402
+from codegen.custom_attention_hub import custom_attention as custom_attention_hub
 from codegen.backends.sparse_attention_hub_native.bias_sparse_attention_backend import (  # noqa: E402
     bias_sparse_attention_fwd,
 )

@@ -1,27 +1,30 @@
 ---
 alwaysApply: false
 ---
-You are supposed to write an optimized cuda code for the function in codegen/workspace/gen_imperative_code.py named __indexer() which extracts the core logic of the sparse attention config defined in custom_attention_hub. You can identify parts of the code that should be written as a trton cuda kernel and used inside this function, including cases where the entire function can be written as a cuda kernel. 
+backend_dir: codegen/backends/flashinfer
+iteration_directory: {backend_dir}/workspace/%iteration
 
-The final function corresponding to the __indexer() shoud be written as a function in __indexer() in file with name codegen/workspace/%iteration/optimized_indexer.py (where iteration = 1,2,3..) Follow the following 
+You are supposed to write an optimized cuda code for the function in {backend_dir}/gen_imperative_code.py named __indexer() which extracts the core logic of the sparse attention config defined in custom_attention_hub. You can identify parts of the code that should be written as a triton cuda kernel and used inside this function, including cases where the entire function can be written as a cuda kernel. 
+
+The final function corresponding to the __indexer() should be written as a function in __indexer() in file with name {iteration_directory}/optimized_indexer.py (where iteration = 1,2,3..) Follow the following 
 
 
-For each iteration, create a plan you want to implement for improvement over the given code / prevous iteration. Once implemented, ensure that the code is correct using. If incorrect, you should keep fixing issues till you get the correct code.
+For each iteration, create a plan you want to implement for improvement over the given code / previous iteration. Once implemented, ensure that the code is correct using. If incorrect, you should keep fixing issues till you get the correct code.
 
 ```
-python3 codegen/correctness.py --indexer-file codegen/workspace/%iteration/optimized_indexer.py
+python3 {backend_dir}/correctness.py --indexer-file {iteration_directory}/optimized_indexer.py
 ```
 
 Once correct optimized code implementing the plan is obtained, then you should profile the code using 
 ```
-CUDA_VISIBLE_DEVICES=7 python3 codegen/profile_indexer_hub.py --output ./codegen/workspace/%iteration/profile --indexer-file ./codegen/workspace/%iteration/optimized_indexer.py &> ./codegen/workspace/%iteration/profile.log 
+CUDA_VISIBLE_DEVICES=7 python3 {backend_dir}/profile_indexer_hub.py --output {iteration_directory}/profile --indexer-file {iteration_directory}/optimized_indexer.py &> {iteration_directory}/profile.log 
 ```
 
-Use the dumped ./codegen/workspace/%iteration/profile* files to make a concise summary file in ./codegen/workspace/%iteration/summary.md which should note 
+Use the dumped {iteration_directory}/profile* files to make a concise summary file in {iteration_directory}/summary.md which should note 
 1. what idea was tried
 2. what are the timing results
-3. what do the trace files and top 10 operations in profile.log say and what are more opportunties for optimization. 
+3. what do the trace files and top 10 operations in profile.log say and what are more opportunities for optimization. 
 
 Then using the insights from current trace begin the next iteration.
 
-If iterations already exist in codegen/workspace/%iteration/ then continue from the last iteration after reading all the previous tries at codegen/workspace/{%iteration}/summary.md
+If iterations already exist in {iteration_directory}/ then continue from the last iteration after reading all the previous tries at {backend_dir}/workspace/{%iteration}/summary.md

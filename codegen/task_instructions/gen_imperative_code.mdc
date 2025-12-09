@@ -1,12 +1,27 @@
 ---
 alwaysApply: false
 ---
-You are supposed to write a function in codegen/workspace/gen_imperative_code.py named __indexer() which is supposed to extract the core logic of the sparse attention config defined in custom_attention_hub from sparse attention hub repository and match the correctness using the correctness test
+backend_dir=backends/sparse_attention_hub_native
+
+run the following to active correct conda environment
+```
+conda activate sparse_attention_hub 
+```
+
+You are supposed to write a function in codegen/$backend_dir/workspace/gen_imperative_code.py named __indexer() which is supposed to extract the core logic of the sparse attention config defined in custom_attention_hub from sparse attention hub repository and match the correctness using the correctness test. __indexer() should not change the K,Q,V inputs. It should only change/create the other sparsity related tensors to be passed to the backend.
+
 
 ```
-python3 codegen/correctness.py --indexer-file codegen/workspace/gen_imperative_code.py
+python3 codegen/$backend_dir/correctness.py --indexer-file codegen/$backend_dir/workspace/gen_imperative_code.py
 ```
 
 The requirements are as follows,
 1. The code written in __indexer() should be imperative and should not use any functions from sparse_attention_hub. it should be a self contained. It can use other external libraries such as torch, flashinfer, and other libraries that provide efficiently implemented primitives
 2. You should evaluate the correctness and keep fixing issues until the behaviors of the codes (via correctness.py) matches exactly.
+
+
+Once acheived, run the following profiling script.
+
+```
+CUDA_VISIBLE_DEVICES=4 python3 codegen/backends/sparse_attention_hub_native/profile_indexer_hub.py --output codegen/backends/sparse_attention_hub_native/workspace/profile_results --indexer-file codegen/backends/sparse_attention_hub_native/workspace/gen_imperative_code.py --warmup-runs 10 --profile-runs 3 --timing-runs 100
+```

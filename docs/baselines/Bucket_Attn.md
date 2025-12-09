@@ -30,7 +30,7 @@ We use **L independent hash tables**, each containing **P random hyperplanes**.
 
 For a key vector \( k_i \):
 
-\[ z_{\ell,p}(i) = \langle k_i,\ w_{\ell,p} \rangle \]
+$$z_{\ell,p}(i) = \langle k_i,\ w_{\ell,p} \rangle$$
 
 ### 2.2 Sign bit
 

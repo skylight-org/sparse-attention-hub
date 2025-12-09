@@ -99,7 +99,7 @@ $$
 
 This mask represents the **union of all selected buckets** across tables.
 
-### 5.3 Collision Counts (RACE-Style Aggregation)
+### 5.3 Collision Counts
 
 Beyond binary membership, we count how many tables vote for each key:
 

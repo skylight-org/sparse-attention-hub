@@ -7,6 +7,7 @@ from .basic_fixed import (
     SinkMasker,
     SinkMaskerConfig,
 )
+from .bucket_top_k import BucketMasker, BucketMaskerConfig
 from .double_sparsity_top_k import (
     DoubleSparsityTopKMasker,
     DoubleSparsityTopKMaskerConfig,
@@ -16,7 +17,6 @@ from .oracle_top_k import OracleTopK, OracleTopKConfig
 from .oracle_top_p import OracleTopPMasker, OracleTopPMaskerConfig
 from .pq_top_k import PQCache, PQCacheConfig
 from .quest_top_k import QuestTopKMasker, QuestTopKMaskerConfig
-from .bucket_top_k import BucketMaskerConfig, BucketMasker
 
 __all__ = [
     "LocalMasker",

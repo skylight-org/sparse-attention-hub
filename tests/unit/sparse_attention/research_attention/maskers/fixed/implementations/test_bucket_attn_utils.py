@@ -2,13 +2,13 @@ import pytest
 import torch
 
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.utils.bucket_utils import (
+    attention_mask_to_allowed_prob,
+    get_collision_counts,
     get_hyper_planes,
     get_protos_T,
     hard_hash,
-    soft_hash,
-    get_collision_counts,
-    attention_mask_to_allowed_prob,
     pack_bits,
+    soft_hash,
 )
 
 
@@ -120,8 +120,8 @@ class TestBucketUtils:
     def test_hard_hash_simple_planes(self):
         """hard_hash should assign the same buckets for identical inputs and respect planes."""
         # Use simple deterministic planes so behavior is predictable
-        B, H, N, D = 1, 1, 2, 2
-        L, P = 1, 2
+        B, H, N, _ = 1, 1, 2, 2
+        L, _ = 1, 2
 
         # Planes: identity-like projections
         planes = torch.tensor(

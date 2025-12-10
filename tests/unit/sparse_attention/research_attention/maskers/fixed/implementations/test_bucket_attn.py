@@ -1,6 +1,7 @@
+import re
+
 import pytest
 import torch
-import re
 
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.bucket_top_k import (
     BucketMasker,

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional, Tuple
+
 import torch
 
 from sparse_attention_hub.sparse_attention.research_attention.maskers.base import (
@@ -14,14 +15,13 @@ from sparse_attention_hub.sparse_attention.utils.kv_utils import (
 from sparse_attention_hub.sparse_attention.utils.mask import Mask
 
 from ..base import TopKMasker, TopKMaskerConfig
-
 from .utils.bucket_utils import (
+    attention_mask_to_allowed_prob,
+    get_collision_counts,
     get_hyper_planes,
     get_protos_T,
     hard_hash,
     soft_hash,
-    get_collision_counts,
-    attention_mask_to_allowed_prob,
 )
 
 

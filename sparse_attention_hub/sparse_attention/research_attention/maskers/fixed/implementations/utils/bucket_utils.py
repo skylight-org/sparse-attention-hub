@@ -1,11 +1,11 @@
 """Bucket utility functions."""
 
-from typing import Dict, Tuple, Optional
-import torch
 import itertools
 import math
-import torch.nn.functional as F
+from typing import Dict, Optional, Tuple
 
+import torch
+import torch.nn.functional as F
 
 PlanesCache = Dict[Tuple[int, torch.device, torch.dtype, int, int], torch.Tensor]
 ProtosCache = Dict[Tuple[int, torch.device, torch.dtype], torch.Tensor]

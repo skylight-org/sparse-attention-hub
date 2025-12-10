@@ -69,15 +69,17 @@ query’s top-t buckets across the L hash tables.
 
 For each hash table ℓ:
 
-- Each key `i` has a hard bucket assignment  
-  $$
-  \text{bucket}_\ell(i) \in \{0,\dots,R-1\}.
-  $$
+- Each key `i` has a hard bucket assignment
+  
+$$
+\text{bucket}_\ell(i) \in \{0,\dots,R-1\}.
+$$
 
-- Each query `q` has a list of **top-t buckets**:  
-  $$
-  \text{Top}_t(q,\ell) = \{r_1, \dots, r_t\}.
-  $$
+- Each query `q` has a list of **top-t buckets**:
+  
+$$
+\text{Top}_t(q,\ell) = \{r_1, \dots, r_t\}.
+$$
 
 A key `i` is considered a match for query `q` in table ℓ if:
 
@@ -85,7 +87,7 @@ $$
 \text{bucket}_\ell(i) \in \text{Top}_t(q,\ell).
 $$
 
-### 5.2 Candidate Mask
+### 5.2 Candidate Selection
 
 A key becomes a **candidate** if it matches in *any* of the L tables:
 
@@ -170,7 +172,7 @@ Some datasets from the RULER benchmark
 
 In general, as the sparsity drops, there is a need to increase L (hash tables). 
   - Full recovery for 20% sparsity can be done with 30-32 tables.
-  - Full recovery for 10% sparsity can be done with 50-32 tables.
+  - Full recovery for 10% sparsity can be done with 50-52 tables.
   - Full recovery for 5% sparsity can be done with 78-80 tables.
 
 Our Results with model - meta-llama/Llama-3.1-8B-Instruct:
@@ -182,6 +184,6 @@ Our Results with model - meta-llama/Llama-3.1-8B-Instruct:
 | **multikey_2** |                |         94        |          96       |
 | **qa_2**       |                |          56       |          58       |
 | **qa_1**       |                |          80       |          80       |
-| **multikey_3** |                |        100         |        100         |
+| **multikey_3** |       94         |        100         |        100         |
 
 

@@ -73,17 +73,14 @@ def pack_bits(bits: torch.Tensor) -> torch.Tensor:
     returns: [...] int16
     """
     P = bits.shape[-1]
-    weights = (
-        1
-        << torch.arange(
-            P - 1, -1, -1, device=bits.device, dtype=torch.int16
-        )
+    weights = 1 << torch.arange(
+        P - 1, -1, -1, device=bits.device, dtype=torch.int16
     )  # [P] with MSB first
     return torch.sum(
-        bits.to(torch.int16)
-        * weights.view(*([1] * (bits.ndim - 1)), P),
+        bits.to(torch.int16) * weights.view(*([1] * (bits.ndim - 1)), P),
         dim=-1,
     )
+
 
 def hard_hash(tensor: torch.Tensor, planes: torch.Tensor) -> torch.Tensor:
     """
@@ -92,11 +89,12 @@ def hard_hash(tensor: torch.Tensor, planes: torch.Tensor) -> torch.Tensor:
     """
     # [B,H,N,L,P]
     proj = torch.einsum("bhnd,lkd->bhnlk", tensor, planes)
-    bits = (proj >= 0)  # bool
+    bits = proj >= 0  # bool
     # [B,H,N,L]
     codes = pack_bits(bits)
     # [B,H,L,N]
     return codes.permute(0, 1, 3, 2).contiguous()
+
 
 def soft_hash(
     queries: torch.Tensor,
@@ -121,8 +119,8 @@ def soft_hash(
 
 
 def get_collision_counts(
-    key_buckets: torch.Tensor,   # [B,H,L,N]
-    top_buckets: torch.Tensor,   # [B,H,Q,L,top_t]
+    key_buckets: torch.Tensor,  # [B,H,L,N]
+    top_buckets: torch.Tensor,  # [B,H,Q,L,top_t]
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     For each table ℓ, mark tokens whose bucket matches any selected bucket in that table.
@@ -137,21 +135,23 @@ def get_collision_counts(
 
     # match_any[b,h,q,l,i] = True if key_buckets[b,h,l,i] equals
     # any of top_buckets[b,h,q,l,t] over t.
-    match_any = torch.zeros((B, H, Q, L, N), dtype=torch.bool, device=key_buckets.device)
+    match_any = torch.zeros(
+        (B, H, Q, L, N), dtype=torch.bool, device=key_buckets.device
+    )
 
     # [B,H,1,L,N], broadcasts across Q and the last dim
     kb = key_buckets.unsqueeze(2)  # [B,H,1,L,N]
 
     for t in range(top_t):
         # Select the t-th chosen bucket per (B,H,Q,L)
-        tb_t = top_buckets[..., t].unsqueeze(-1)     # [B,H,Q,L,1]
-        match_any |= (kb == tb_t)                    # [B,H,Q,L,N]
+        tb_t = top_buckets[..., t].unsqueeze(-1)  # [B,H,Q,L,1]
+        match_any |= kb == tb_t  # [B,H,Q,L,N]
 
     # Union across L tables → candidate mask [B,H,Q,N]
     candidate_mask = match_any.any(dim=3)
 
     # Collision counts: number of tables where (q,i) matched
-    collision_counts = match_any.sum(dim=3)          # [B,H,Q,N]
+    collision_counts = match_any.sum(dim=3)  # [B,H,Q,N]
 
     return candidate_mask, collision_counts
 

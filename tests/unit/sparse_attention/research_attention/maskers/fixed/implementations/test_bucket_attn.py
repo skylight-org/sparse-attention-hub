@@ -27,7 +27,6 @@ class TestBucketMaskerImplementation:
         assert config.L == 2
         assert config.top_t == 3
 
-
     def test_bucket_masker_config_validation(self):
         from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.bucket_top_k import (
             BucketMasker,

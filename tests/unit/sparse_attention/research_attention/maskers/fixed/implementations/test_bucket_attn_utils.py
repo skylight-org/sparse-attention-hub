@@ -11,6 +11,7 @@ from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.impl
     pack_bits,
 )
 
+
 @pytest.mark.unit
 class TestBucketUtils:
     def test_get_hyper_planes_basic(self):
@@ -133,9 +134,7 @@ class TestBucketUtils:
         )  # [L,P,D]
 
         # Two keys: [1,1] and [-1,-1]
-        keys = torch.tensor(
-            [[[[1.0, 1.0], [-1.0, -1.0]]]]  # [B,H,N,D]
-        )
+        keys = torch.tensor([[[[1.0, 1.0], [-1.0, -1.0]]]])  # [B,H,N,D]
 
         codes = hard_hash(keys, planes)  # [B,H,L,N]
         assert codes.shape == (B, H, L, N)
@@ -183,27 +182,33 @@ class TestBucketUtils:
         # Table 0 buckets: [0, 1, 2]
         # Table 1 buckets: [1, 1, 0]
         key_buckets = torch.tensor(
-            [[  # B
-                [  # H
-                    [0, 1, 2],  # L=0
-                    [1, 1, 0],  # L=1
+            [
+                [  # B
+                    [  # H
+                        [0, 1, 2],  # L=0
+                        [1, 1, 0],  # L=1
+                    ]
                 ]
-            ]]
+            ]
         )  # [1,1,2,3] => [B,H,L,N]
 
         # For q0: in table 0 pick bucket 1, in table 1 pick bucket 0
         # For q1: in table 0 pick bucket 2, in table 1 pick bucket 1
         top_buckets = torch.tensor(
-            [[[
+            [
                 [
-                    [1],  # q0, L=0
-                    [0],  # q0, L=1
-                ],
-                [
-                    [2],  # q1, L=0
-                    [1],  # q1, L=1
-                ],
-            ]]]
+                    [
+                        [
+                            [1],  # q0, L=0
+                            [0],  # q0, L=1
+                        ],
+                        [
+                            [2],  # q1, L=0
+                            [1],  # q1, L=1
+                        ],
+                    ]
+                ]
+            ]
         )  # shape: [1, 1, 2, 2, 1]
 
         candidate_mask, collision_counts = get_collision_counts(
@@ -257,9 +262,7 @@ class TestBucketUtils:
         """attention_mask_to_allowed_prob for additive (float) masks."""
         B, K = 1, 4
         # >=0 => allowed (1.0), <0 => forbidden (0.0)
-        attention_mask = torch.tensor(
-            [[[0.0, 1.0, -1e9, -0.5]]]
-        )  # [B,1,K]
+        attention_mask = torch.tensor([[[0.0, 1.0, -1e9, -0.5]]])  # [B,1,K]
 
         allowed_prob = attention_mask_to_allowed_prob(attention_mask, K)
         assert allowed_prob.shape == (B, 1, 1, K)

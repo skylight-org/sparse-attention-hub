@@ -137,6 +137,10 @@ plots/
 *.ckpt
 wandb/
 
+# Test outputs
+test_chunked_prefill_*/
+test_chunked_prefill.py
+
 # IDE
 .vscode/
 .idea/

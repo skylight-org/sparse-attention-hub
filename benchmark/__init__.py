@@ -10,6 +10,7 @@ from . import (
     AIME2024,
     AIME2025,
     infinite_bench,
+    loft,
     longbench,
     longbenchv2,
     loogle,
@@ -35,6 +36,7 @@ from .benchmark_registry import (
 )
 
 # Import concrete benchmark implementations
+from .loft import LoftRag
 from .longbench import LongBench
 from .loogle import Loogle
 from .mock_benchmark import MockBenchmark
@@ -48,12 +50,14 @@ __all__ = [
     "ensure_benchmarks_loaded",
     "validate_benchmark_config",
     "get_benchmark_subsets",
+    "LoftRag",
     "LongBench",
     "MockBenchmark",
     "Loogle",
     "AIME2024",
     "AIME2025",
     "infinite_bench",
+    "loft",
     "longbench",
     "longbenchv2",
     "loogle",

@@ -165,19 +165,21 @@ def deserialize_sparse_config(data: Optional[Dict]) -> Optional[Any]:
     # Dynamically discover all available masker config classes
     config_map = get_all_masker_config_classes()
     
-    # Reconstruct masker configs with error handling
+    #reconstruct masker configs so we let errors propagate for critical failures
+    #this ennsures missing files or invalid configurations cause immediate failues in stead of silent skipping maskers and producing misleading results
     masker_configs = []
     for masker_data in data.get("masker_configs", []):
         config_class = config_map.get(masker_data["type"])
         if config_class:
-            try:
-                # Create instance with parameters
-                params = masker_data.get("params", {})
-                masker_configs.append(config_class(**params))
-            except Exception as e:
-                logging.warning(f"Failed to create {masker_data['type']}: {e}")
-                continue
+            #create instance with parameters so we let ValueError/FileNotFoundError propagate
+            params = masker_data.get("params", {})
+            masker_configs.append(config_class(**params))
+        else:
+            raise ValueError(
+                f"Unknown masker config type: {masker_data['type']}. "
+                f"Available types: {list(config_map.keys())}"
+            )
     
-    # Import ResearchAttentionConfig here to avoid circular imports
+    #import ResearchAttentionConfig here to avoid circular imports
     from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
     return ResearchAttentionConfig(masker_configs=masker_configs) if masker_configs else None

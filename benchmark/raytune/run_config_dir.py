@@ -322,7 +322,7 @@ def main(
     print(f"\n{'='*80}")
     print(f"RAY BENCHMARK RUNNER")
     print(f"{'='*80}")
-    
+
     # Initialize Ray
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True)
@@ -427,12 +427,16 @@ def main(
         pool.submit(lambda actor, task: actor.run_benchmark.remote(task), task)
     
     # Collect results
+    results: List[BenchmarkResult] = []
     while pool.has_next():
         result = pool.get_next()
         result_queue.put(result)
+        results.append(result)
     
     # Wait for progress reporter
     ray.get(progress_task)
+    
+    failed_results: List[BenchmarkResult] = [r for r in results if not r.success]
     
     # Get actor statistics
     print("\nActor statistics:")
@@ -454,6 +458,11 @@ def main(
     print(f"{'='*80}")
     
     ray.shutdown()
+
+    if failed_results:
+        for result in failed_results:
+            print(f"[ERROR] Task {result.task_id} failed: {result.error}")
+        raise RuntimeError("One or more benchmark tasks failed. See errors above.")
 
 
 if __name__ == "__main__":

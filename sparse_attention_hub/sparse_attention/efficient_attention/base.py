@@ -1,21 +1,27 @@
 """Base classes for efficient attention mechanisms."""
 
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type
 
 import torch
 from torch import nn
 
 from ..base import SparseAttention, SparseAttentionConfig
+from ..research_attention.base import ResearchAttentionConfig
+from ..research_attention.maskers.base import ResearchMasker
+
+
+# Type alias for masker class
+MaskerClass = Type[ResearchMasker]
 
 
 @dataclass
 class EfficientAttentionConfig(SparseAttentionConfig):
     """Configuration class for efficient attention mechanisms."""
 
-    pass
+    research_attention_config: ResearchAttentionConfig
 
 
 class EfficientAttention(SparseAttention):
@@ -39,6 +45,7 @@ class EfficientAttention(SparseAttention):
         attention_mask: Optional[torch.Tensor],
         scaling: float,
         dropout: float,
+        sparse_meta_data: Dict[Any, Any],
         **kwargs: Dict[str, Any],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Compute efficient attention mechanism.
@@ -48,8 +55,28 @@ class EfficientAttention(SparseAttention):
         """
         pass
 
+    @abstractmethod
+    def indexer_first(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize indexer for the first iteration.
+
+        This method is called once at the beginning to set up the indexer state.
+        Subclasses should implement this method to initialize any necessary state
+        for indexing operations.
+        """
+        pass
+
+    @abstractmethod
+    def indexer_next(self, *args: Any, **kwargs: Any) -> None:
+        """Update indexer for subsequent iterations.
+
+        This method is called for each subsequent iteration after indexer_first.
+        Subclasses should implement this method to update the indexer state.
+        """
+        pass
+
     @classmethod
-    def create_from_config(cls, config: SparseAttentionConfig) -> "EfficientAttention":
+    @abstractmethod
+    def create_from_config(cls, config: EfficientAttentionConfig) -> "EfficientAttention":
         """Create efficient attention instance from configuration.
 
         Args:
@@ -61,39 +88,14 @@ class EfficientAttention(SparseAttention):
         Raises:
             TypeError: If config is not an EfficientAttentionConfig.
         """
-        if not isinstance(config, EfficientAttentionConfig):
-            raise TypeError(f"Expected EfficientAttentionConfig, got {type(config)}")
+        pass
 
-        # Import here to avoid circular imports
-        from typing import Type, cast
 
-        from .implementations import (
-            DoubleSparsity,
-            DoubleSparsityConfig,
-            HashAttention,
-            HashAttentionConfig,
-        )
+class SparseAlgorithm(ABC):
+    """Abstract base class for sparse attention algorithms.
 
-        # Registry mapping config types to concrete efficient attention classes
-        _EFFICIENT_ATTENTION_REGISTRY: Dict[
-            Type[EfficientAttentionConfig], Type[EfficientAttention]
-        ] = {
-            DoubleSparsityConfig: DoubleSparsity,
-            HashAttentionConfig: HashAttention,
-        }
+    Subclasses should define the masker_classes field to specify which
+    masker classes are compatible with this algorithm.
+    """
 
-        # Look up the concrete class based on the config type
-        concrete_class: Optional[
-            Type[EfficientAttention]
-        ] = _EFFICIENT_ATTENTION_REGISTRY.get(type(config))
-        if concrete_class is None:
-            raise ValueError(
-                f"No efficient attention class found for config type: {type(config)}"
-            )
-
-        # Cast to help mypy understand the type
-        concrete_class: Type[EfficientAttention] = cast(
-            Type[EfficientAttention], concrete_class
-        )
-        # Call the concrete class's create_from_config method
-        return concrete_class.create_from_config(config)
+    masker_classes: ClassVar[List[MaskerClass]]

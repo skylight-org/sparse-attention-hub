@@ -38,6 +38,7 @@ class SparseAttention(ABC):
         attention_mask: Optional[torch.Tensor],
         scaling: float,
         dropout: float,
+        sparse_meta_data: Dict[Any, Any],
         **kwargs: Dict[str, Any],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Compute custom attention mechanism.

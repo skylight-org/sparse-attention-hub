@@ -4,7 +4,7 @@ import torch
 import triton
 import triton.language as tl
 
-from sparse_attention_backend import (
+from .sparse_attention_backend import (
     sparse_decode_stage2 as _sparse_decode_stage2,  # stage-2 kernel is weight-agnostic
 )
 

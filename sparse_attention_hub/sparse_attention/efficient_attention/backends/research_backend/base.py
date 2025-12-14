@@ -83,28 +83,24 @@ class SparseResearchBackend(SparseBackend):
 
         return result
 
-    def pre_attention_transforms(
-        self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        mask: Mask,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Mask]:
-        """Transform inputs for the backend.
+    def convert_indexer_format(self, sparse_attention_mask: Mask) -> Mask:
+        """Convert sparse attention mask to research backend format.
 
-        This function transforms the inputs to suit the attention_computation_backend.
-        For this implementation, query, key, value, and mask remain the same.
+        For the research backend, the mask is returned as-is since it uses
+        the Mask object directly in attention computation.
 
         Args:
-            query: Query tensor.
-            key: Key tensor.
-            value: Value tensor.
-            mask: Mask object.
+            sparse_attention_mask: Mask object representing the sparse attention pattern.
 
         Returns:
-            Tuple of (query, key, value, mask) with unchanged values.
+            The same Mask object, unchanged.
         """
-        return (query, key, value, mask)
+        return sparse_attention_mask
+    
+    def check_correctness_with_research_backend(self, other_sparse_attention_mask: Mask, *args) -> bool:
+        my_sparse_attention_mask = args[0]
+        return torch.allclose(my_sparse_attention_mask.get_dense_mask(), other_sparse_attention_mask.get_dense_mask(), atol=1e-2, rtol=1e-2)
+
 
     def post_attention_transform(
         self,

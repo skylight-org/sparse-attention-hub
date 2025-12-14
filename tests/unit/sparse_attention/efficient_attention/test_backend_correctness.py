@@ -238,13 +238,10 @@ def test_native_backend_attention_mask_exception(
     native_backend: SparseNativeBackend = SparseNativeBackend()
     # Transform inputs to get sparse_list, sparse_len, weight_list
     (
-        _,
-        _,
-        _,
         sparse_list,
         sparse_len,
         weight_list,
-    ) = native_backend.pre_attention_transforms(queries, keys, values, mask)
+    ) = native_backend.convert_indexer_format(mask)
 
     # Verify that ValueError is raised
     with pytest.raises(ValueError, match="attention_mask"):
@@ -349,13 +346,10 @@ def _run_backend_correctness_test(
     native_backend: SparseNativeBackend = SparseNativeBackend()
     # Transform inputs to get sparse_list, sparse_len, weight_list
     (
-        query_transformed,
-        key_transformed,
-        value_transformed,
         sparse_list,
         sparse_len,
         weight_list,
-    ) = native_backend.pre_attention_transforms(queries, keys, values, mask)
+    ) = native_backend.convert_indexer_format(mask)
 
     native_output: torch.Tensor = native_backend.attention_computation_backend(
         module=module,

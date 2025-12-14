@@ -13,7 +13,7 @@ from torch import nn
 
 from ..utils.mask import Mask
 from .base import EfficientAttention, EfficientAttentionConfig
-from ..research_attention.base import ResearchAttention
+from ..research_attention.base import ResearchAttention, ResearchAttentionConfig
 from .backends.research_backend.base import SparseResearchBackend
 
 
@@ -271,6 +271,80 @@ class EfficientAttentionResearchBackend(EfficientAttention, SparseResearchBacken
             )
 
         return sparse_attention_mask
+
+    @classmethod
+    @abstractmethod
+    def create_sample_data_first(
+        cls, B: int, H: int, num_keys: int, d: int
+    ) -> Tuple[
+        ResearchAttentionConfig,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        nn.Module,
+        Optional[torch.Tensor],
+        float,
+        float,
+        Dict[Any, Any],
+    ]:
+        """Create sample data for the first iteration.
+
+        Args:
+            B: Batch size.
+            H: Number of attention heads.
+            num_keys: Number of key tokens (sequence length).
+            d: Dimension per attention head.
+
+        Returns:
+            Tuple containing (in order of indexer_next parameters):
+                - research_attention_config: ResearchAttentionConfig containing SinkMaskerConfig and LocalMaskerConfig.
+                - query: Query tensor of shape (B, H, num_queries, d).
+                - key: Key tensor of shape (B, H, num_keys, d).
+                - value: Value tensor of shape (B, H, num_keys, d).
+                - module: Dummy attention module.
+                - attention_mask: Optional attention mask (set to None).
+                - scaling: Scaling factor for attention (1.0 / sqrt(d)).
+                - dropout: Dropout probability (0.0).
+                - sparse_meta_data: Dictionary containing sparse attention metadata.
+        """
+        pass
+
+    @classmethod
+    @abstractmethod
+    def create_sample_data_next(
+        cls, B: int, H: int, num_keys: int, d: int
+    ) -> Tuple[
+        ResearchAttentionConfig,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        nn.Module,
+        Optional[torch.Tensor],
+        float,
+        float,
+        Dict[Any, Any],
+    ]:
+        """Create sample data for subsequent iterations.
+
+        Args:
+            B: Batch size.
+            H: Number of attention heads.
+            num_keys: Number of key tokens (sequence length).
+            d: Dimension per attention head.
+
+        Returns:
+            Tuple containing (in order of indexer_next parameters):
+                - research_attention_config: ResearchAttentionConfig containing SinkMaskerConfig and LocalMaskerConfig.
+                - query: Query tensor of shape (B, H, num_queries, d).
+                - key: Key tensor of shape (B, H, num_keys, d).
+                - value: Value tensor of shape (B, H, num_keys, d).
+                - module: Dummy attention module.
+                - attention_mask: Optional attention mask (set to None).
+                - scaling: Scaling factor for attention (1.0 / sqrt(d)).
+                - dropout: Dropout probability (0.0).
+                - sparse_meta_data: Dictionary containing sparse attention metadata.
+        """
+        pass
 
     @classmethod
     @abstractmethod

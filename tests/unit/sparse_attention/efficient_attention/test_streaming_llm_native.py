@@ -234,20 +234,17 @@ def test_indexer_first_correctness(
         f"weight_list_first shape mismatch: expected {(B, H, K)}, got {weight_list_first.shape}"
     )
 
-    # Compare with research backend mask using pre_attention_transforms
+    # Compare with research backend mask using convert_indexer_format
     # Convert research backend mask to native backend format
     (
-        _,
-        _,
-        _,
         research_sparse_list,
         research_sparse_len,
         research_weight_list,
-    ) = native_backend.pre_attention_transforms(queries, keys, values, mask_first)
+    ) = native_backend.convert_indexer_format(mask_first)
 
     # Compare sparse_len
     assert torch.equal(sparse_len_first, research_sparse_len), (
-        f"sparse_len mismatch between native indexer and pre_attention_transforms: "
+        f"sparse_len mismatch between native indexer and convert_indexer_format: "
         f"native={sparse_len_first}, research={research_sparse_len}"
     )
 
@@ -272,7 +269,7 @@ def test_indexer_first_correctness(
                 )
 
     # Compare weight_list
-    # Note: pre_attention_transforms converts mask values to weights as 1.0 / (mask_value + 1e-6)
+    # Note: convert_indexer_format converts mask values to weights as 1.0 / (mask_value + 1e-6)
     # For StreamingLLM mask (1.0 for attended, 0.0 for non-attended):
     # - Attended tokens: weight ≈ 1.0 / (1.0 + 1e-6) ≈ 0.999999
     # - Non-attended tokens: weight = 1.0 / (0.0 + 1e-6) = 1e6
@@ -358,7 +355,6 @@ def test_indexer_next_correctness(
         sparse_meta_data=sparse_meta_data,
         **kwargs,
     )
-
     # Call research backend indexer_next
     mask_next: Mask = research_backend.indexer_next(
         query=queries,
@@ -385,20 +381,17 @@ def test_indexer_next_correctness(
         f"weight_list_next shape mismatch: expected {(B, H, K)}, got {weight_list_next.shape}"
     )
 
-    # Compare with research backend mask using pre_attention_transforms
+    # Compare with research backend mask using convert_indexer_format
     # Convert research backend mask to native backend format
     (
-        _,
-        _,
-        _,
         research_sparse_list,
         research_sparse_len,
         research_weight_list,
-    ) = native_backend.pre_attention_transforms(queries, keys, values, mask_next)
+    ) = native_backend.convert_indexer_format(mask_next)
 
     # Compare sparse_len
     assert torch.equal(sparse_len_next, research_sparse_len), (
-        f"sparse_len mismatch between native indexer and pre_attention_transforms: "
+        f"sparse_len mismatch between native indexer and convert_indexer_format: "
         f"native={sparse_len_next}, research={research_sparse_len}"
     )
 
@@ -423,7 +416,7 @@ def test_indexer_next_correctness(
                 )
 
     # Compare weight_list
-    # Note: pre_attention_transforms converts mask values to weights as 1.0 / (mask_value + 1e-6)
+    # Note: convert_indexer_format converts mask values to weights as 1.0 / (mask_value + 1e-6)
     # For StreamingLLM mask (1.0 for attended, 0.0 for non-attended):
     # - Attended tokens: weight ≈ 1.0 / (1.0 + 1e-6) ≈ 0.999999
     # - Non-attended tokens: weight = 1.0 / (0.0 + 1e-6) = 1e6

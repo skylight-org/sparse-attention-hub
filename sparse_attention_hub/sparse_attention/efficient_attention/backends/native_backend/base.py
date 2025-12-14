@@ -19,7 +19,7 @@ class SparseNativeBackend(SparseBackend):
 
     Example:
         >>> backend = SparseNativeBackend()
-        >>> sparse_list, sparse_len, weight_list = backend.pre_attention_transforms(...)
+        >>> sparse_list, sparse_len, weight_list = backend.convert_indexer_format(mask)
         >>> output = backend.attention_computation_backend(
         ...     module=module,
         ...     queries=queries,
@@ -111,33 +111,25 @@ class SparseNativeBackend(SparseBackend):
         # Return 3D tensor (b, h, d) - post_attention_transform will handle reshaping to 4D
         return result
 
-    def pre_attention_transforms(
+    def convert_indexer_format(
         self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        mask: Mask,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Transform inputs for the native backend.
+        sparse_attention_mask: Mask,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Convert sparse attention mask to native backend format.
 
-        This function transforms the inputs to suit the attention_computation_backend.
-        Query is squeezed to remove the sq dimension (since sq must be 1), key and value
-        remain the same, and mask is transformed to sparse_list, sparse_len, and weight_list.
+        This function converts a Mask object to the native backend format:
+        sparse_list, sparse_len, and weight_list.
 
         Args:
-            query: Query tensor of shape (b, h, sq, d) or (b, h, d) where sq must be 1.
-            key: Key tensor of shape (b, h_kv, sk, d).
-            value: Value tensor of shape (b, h_kv, sk, d).
-            mask: Mask object of shape (b, h, sq, sk) where sq must be 1.
+            sparse_attention_mask: Mask object of shape (b, h, sq, sk) where sq must be 1.
 
         Returns:
-            Tuple of (query, key, value, sparse_list, sparse_len, weight_list) where:
-            - query: Squeezed query tensor of shape (b, h, d) if input was (b, h, 1, d)
-            - key, value: Unchanged input tensors
+            Tuple of (sparse_list, sparse_len, weight_list) where:
             - sparse_list: Tensor of shape (b, h, sk) containing token indices to attend to
             - sparse_len: Tensor of shape (b, h) containing number of valid tokens per head
             - weight_list: Tensor of shape (b, h, sk) containing weights for each token
         """
+        mask: Mask = sparse_attention_mask
         # Get mask shape and validate
         B: int = mask.shape[0]
         H: int = mask.shape[1]
@@ -152,10 +144,6 @@ class SparseNativeBackend(SparseBackend):
 
         device: torch.device = mask.device
         dtype: torch.dtype = mask.dtype
-
-        # Squeeze query dimension for consistency (sq=1 -> remove dimension)
-        if query.dim() == 4:
-            query = query.squeeze(2)  # (b, h, d)
 
         # Get index representation for efficient processing
         indices, ptr, data = mask.get_index_mask()  # indices: (num_nonzero,), ptr: (B*H*Sq+1,), data: (num_nonzero,)
@@ -224,7 +212,24 @@ class SparseNativeBackend(SparseBackend):
             # Store weights at the token index positions
             weight_list[b, h, col_indices] = active_weights
 
-        return (query, key, value, sparse_list, sparse_len, weight_list)
+        return (sparse_list, sparse_len, weight_list)
+
+    def check_correctness_with_research_backend(self, other_sparse_attention_mask: Mask, *args) -> bool:
+        sparse_list, sparse_len, weight_list = args
+        other_sparse_list, other_sparse_len, other_weight_list = self.convert_indexer_format(other_sparse_attention_mask)
+
+        # match sparse_len
+        if not torch.equal(sparse_len, other_sparse_len):
+            return False
+        if not torch.allclose(weight_list, other_weight_list, atol=1e-2, rtol=1e-2):
+            return False
+        for b in range(sparse_len.shape[0]):
+            for h in range(sparse_len.shape[1]):
+                if sparse_len[b, h] > 0:
+                    if not torch.equal(sparse_list[b, h, :sparse_len[b, h]], other_sparse_list[b, h, :other_sparse_len[b, h]]):
+                        return False
+        return True
+
 
     def post_attention_transform(
         self,

@@ -107,7 +107,6 @@ def _sparse_pattern_kernel(
         )
         tl.store(weight_list_ptr + weight_list_offset, weight, mask=mask)
 
-
 def __indexer(
     key: torch.Tensor,
     weight_list_dtype: torch.dtype,
@@ -213,6 +212,8 @@ def __indexer(
 
     return (new_sparse_list, new_sparse_len, new_weight_list)
 
+__indexer_first = __indexer
+__indexer_next = __indexer
 
 @dataclass
 class StreamingLLMNativeBackendConfig(EfficientAttentionNativeBackendConfig):
@@ -318,8 +319,8 @@ class StreamingLLMNativeBackend(EfficientAttentionNativeBackend):
             - sparse_len: Tensor of shape (b, h) containing number of valid tokens per head
             - weight_list: Tensor of shape (b, h, sk) containing weights for each token
         """
-        indexer_func = globals()["__indexer"]
-        return indexer_func(
+        indexer_function = globals().get("__indexer_first")
+        return indexer_function(
             key=key,
             weight_list_dtype=query.dtype,
             sink_size=self.sink_size,
@@ -361,8 +362,9 @@ class StreamingLLMNativeBackend(EfficientAttentionNativeBackend):
             - sparse_len: Tensor of shape (b, h) containing number of valid tokens per head
             - weight_list: Tensor of shape (b, h, sk) containing weights for each token
         """
-        indexer_func = globals()["__indexer"]
-        return indexer_func(
+        
+        indexer_function = globals().get("__indexer_next")
+        return indexer_function(
             key=key,
             weight_list_dtype=query.dtype,
             sink_size=self.sink_size,

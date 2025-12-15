@@ -7,7 +7,10 @@ implementations.
 
 import argparse
 import importlib
-from typing import Any, Dict, Optional, Tuple, Type
+import importlib.util
+import os
+import sys
+from typing import Any, Callable, Dict, Optional, Tuple, Type
 
 import torch
 from torch import nn
@@ -59,10 +62,84 @@ def compare_tensors(
     return True
 
 
+def load_indexer_function_from_file(
+    file_path: str, function_name: str
+) -> Callable:
+    """Dynamically load an indexer function from a Python file.
+
+    Args:
+        file_path: Path to the Python file containing the function.
+        function_name: Name of the function to load (e.g., '__indexer_first' or '__indexer_next').
+
+    Returns:
+        The function from the loaded module.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        AttributeError: If the file does not contain the specified function.
+        ImportError: If the file cannot be imported.
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Indexer file not found: {file_path}")
+
+    # Load the module dynamically
+    spec = importlib.util.spec_from_file_location("custom_indexer_module", file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module from: {file_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    # Get the function
+    if not hasattr(module, function_name):
+        raise AttributeError(
+            f"Module {file_path} does not contain a '{function_name}' function"
+        )
+
+    indexer_fn: Callable = getattr(module, function_name)
+    return indexer_fn
+
+
+def replace_indexer_functions_in_module(
+    class2: Type[EfficientAttention],
+    indexer_first_file: Optional[str] = None,
+    indexer_next_file: Optional[str] = None,
+) -> None:
+    """Replace __indexer_first and/or __indexer_next functions in class2's module.
+
+    Args:
+        class2: The class whose module should have its functions replaced.
+        indexer_first_file: Optional path to file containing __indexer_first function.
+        indexer_next_file: Optional path to file containing __indexer_next function.
+    """
+    module_name: str = class2.__module__
+    module = sys.modules.get(module_name)
+    if module is None:
+        # Import the module if it's not already loaded
+        module = importlib.import_module(module_name)
+
+    if indexer_first_file is not None:
+        new_indexer_first: Callable = load_indexer_function_from_file(
+            indexer_first_file, "__indexer_first"
+        )
+        # Update module's globals to replace the function
+        module.__dict__["__indexer_first"] = new_indexer_first
+        print(f"Replaced __indexer_first in {module_name} with function from {indexer_first_file}")
+
+    if indexer_next_file is not None:
+        new_indexer_next: Callable = load_indexer_function_from_file(
+            indexer_next_file, "__indexer_next"
+        )
+        # Update module's globals to replace the function
+        module.__dict__["__indexer_next"] = new_indexer_next
+        print(f"Replaced __indexer_next in {module_name} with function from {indexer_next_file}")
+
+
 def check_indexer_first_correctness(
     class1: Type[EfficientAttentionResearchBackend],
     class2: Type[EfficientAttention],
     num_iterations: int = 10,
+    indexer_first_file: Optional[str] = None,
 ) -> bool:
     """Test that indexer_first from both classes match.
 
@@ -70,6 +147,7 @@ def check_indexer_first_correctness(
         class1: Research backend class (EfficientAttentionResearchBackend).
         class2: Native backend class (EfficientAttention, typically EfficientAttentionNativeBackend).
         num_iterations: Number of test iterations (default: 10).
+        indexer_first_file: Optional path to file containing __indexer_first function to replace.
 
     Returns:
         True if all tests pass, False otherwise.
@@ -78,6 +156,12 @@ def check_indexer_first_correctness(
     H: int = 4
     num_keys: int = 64
     d: int = 32
+
+    # Replace __indexer_first function if file is provided
+    if indexer_first_file is not None:
+        replace_indexer_functions_in_module(
+            class2=class2, indexer_first_file=indexer_first_file
+        )
 
     # Determine device (CUDA if available, else CPU)
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -165,6 +249,7 @@ def check_indexer_next_correctness(
     class1: Type[EfficientAttentionResearchBackend],
     class2: Type[EfficientAttention],
     num_iterations: int = 10,
+    indexer_next_file: Optional[str] = None,
 ) -> bool:
     """Test that indexer_next from both classes match.
 
@@ -172,6 +257,7 @@ def check_indexer_next_correctness(
         class1: Research backend class (EfficientAttentionResearchBackend).
         class2: Native backend class (EfficientAttention, typically EfficientAttentionNativeBackend).
         num_iterations: Number of test iterations (default: 10).
+        indexer_next_file: Optional path to file containing __indexer_next function to replace.
 
     Returns:
         True if all tests pass, False otherwise.
@@ -180,6 +266,12 @@ def check_indexer_next_correctness(
     H: int = 4
     num_keys: int = 64
     d: int = 32
+
+    # Replace __indexer_next function if file is provided
+    if indexer_next_file is not None:
+        replace_indexer_functions_in_module(
+            class2=class2, indexer_next_file=indexer_next_file
+        )
 
     # Determine device (CUDA if available, else CPU)
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -315,6 +407,20 @@ def main() -> None:
         default=10,
         help="Number of test iterations (default: 10)",
     )
+    parser.add_argument(
+        "--indexer-first-file",
+        type=str,
+        default=None,
+        help="Path to Python file containing __indexer_first function to replace in class2. "
+        "If specified, the __indexer_first function in class2's module will be replaced.",
+    )
+    parser.add_argument(
+        "--indexer-next-file",
+        type=str,
+        default=None,
+        help="Path to Python file containing __indexer_next function to replace in class2. "
+        "If specified, the __indexer_next function in class2's module will be replaced.",
+    )
 
     args = parser.parse_args()
 
@@ -325,11 +431,17 @@ def main() -> None:
     # Run the appropriate test
     if args.function == "indexer_first":
         result: bool = check_indexer_first_correctness(
-            class1=class1, class2=class2, num_iterations=args.num_iterations
+            class1=class1,
+            class2=class2,
+            num_iterations=args.num_iterations,
+            indexer_first_file=args.indexer_first_file,
         )
     else:  # indexer_next
         result: bool = check_indexer_next_correctness(
-            class1=class1, class2=class2, num_iterations=args.num_iterations
+            class1=class1,
+            class2=class2,
+            num_iterations=args.num_iterations,
+            indexer_next_file=args.indexer_next_file,
         )
 
     if result:

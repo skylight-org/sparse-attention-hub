@@ -23,6 +23,7 @@ from ..efficient_attention_research_backend import (
     EfficientAttentionResearchBackend,
     EfficientAttentionResearchBackendConfig,
 )
+from .util import move_sparse_meta_data_to_device
 
 
 def load_indexer_function_from_file(
@@ -121,7 +122,7 @@ def profile_indexer_first(
     """
     B: int = 1
     H: int = 32
-    num_keys: int = 256
+    num_keys: int = 32000
     d: int = 128
 
     # Replace __indexer_first function if file is provided
@@ -154,6 +155,7 @@ def profile_indexer_first(
     module = module.to(device)
     if attention_mask is not None:
         attention_mask = attention_mask.to(device)
+    sparse_meta_data = move_sparse_meta_data_to_device(sparse_meta_data, device)
 
     # Create object2 of class2 using config
     config2_class_name: str = f"{class2.__name__}Config"
@@ -184,6 +186,7 @@ def profile_indexer_first(
                 scaling=scaling,
                 dropout=dropout,
                 sparse_meta_data=sparse_meta_data,
+                layer_idx=0,
             )
             if device.type == "cuda":
                 torch.cuda.synchronize()
@@ -213,6 +216,7 @@ def profile_indexer_first(
                         scaling=scaling,
                         dropout=dropout,
                         sparse_meta_data=sparse_meta_data,
+                        layer_idx=0,
                     )
 
     # Export trace
@@ -248,6 +252,7 @@ def profile_indexer_first(
                 scaling=scaling,
                 dropout=dropout,
                 sparse_meta_data=sparse_meta_data,
+                layer_idx=0,
             )
 
             # End timing
@@ -342,6 +347,7 @@ def profile_indexer_next(
     module = module.to(device)
     if attention_mask is not None:
         attention_mask = attention_mask.to(device)
+    sparse_meta_data = move_sparse_meta_data_to_device(sparse_meta_data, device)
 
     # Create object2 of class2 using config
     config2_class_name: str = f"{class2.__name__}Config"
@@ -372,6 +378,7 @@ def profile_indexer_next(
                 scaling=scaling,
                 dropout=dropout,
                 sparse_meta_data=sparse_meta_data,
+                layer_idx=0,
             )
             if device.type == "cuda":
                 torch.cuda.synchronize()
@@ -401,6 +408,7 @@ def profile_indexer_next(
                         scaling=scaling,
                         dropout=dropout,
                         sparse_meta_data=sparse_meta_data,
+                        layer_idx=0,
                     )
 
     # Export trace
@@ -436,6 +444,7 @@ def profile_indexer_next(
                 scaling=scaling,
                 dropout=dropout,
                 sparse_meta_data=sparse_meta_data,
+                layer_idx=0,
             )
 
             # End timing

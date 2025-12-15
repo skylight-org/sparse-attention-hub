@@ -21,6 +21,7 @@ from ..efficient_attention_research_backend import (
     EfficientAttentionResearchBackend,
     EfficientAttentionResearchBackendConfig,
 )
+from .util import move_sparse_meta_data_to_device
 
 
 def compare_tensors(
@@ -187,6 +188,7 @@ def check_indexer_first_correctness(
         module = module.to(device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(device)
+        sparse_meta_data = move_sparse_meta_data_to_device(sparse_meta_data, device)
 
         # Create object1 of class1 using given research_attention_config
         # Get the config class from the same module as class1
@@ -220,6 +222,7 @@ def check_indexer_first_correctness(
             scaling=scaling,
             dropout=dropout,
             sparse_meta_data=sparse_meta_data,
+            layer_idx=0,
         )
 
         # results2 = object2.indexer_first on the data (native backend returns tuple)
@@ -232,6 +235,7 @@ def check_indexer_first_correctness(
             scaling=scaling,
             dropout=dropout,
             sparse_meta_data=sparse_meta_data,
+            layer_idx=0,
         )
 
         # Use check_correctness_with_research_backend to compare
@@ -297,6 +301,7 @@ def check_indexer_next_correctness(
         module = module.to(device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(device)
+        sparse_meta_data = move_sparse_meta_data_to_device(sparse_meta_data, device)
 
         # Create object1 of class1 using given research_attention_config
         # Get the config class from the same module as class1
@@ -330,6 +335,7 @@ def check_indexer_next_correctness(
             scaling=scaling,
             dropout=dropout,
             sparse_meta_data=sparse_meta_data,
+            layer_idx=0,
         )
 
         # results2 = object2.indexer_next on the data (native backend returns tuple)
@@ -342,6 +348,7 @@ def check_indexer_next_correctness(
             scaling=scaling,
             dropout=dropout,
             sparse_meta_data=sparse_meta_data,
+            layer_idx=0,
         )
 
         # Use check_correctness_with_research_backend to compare

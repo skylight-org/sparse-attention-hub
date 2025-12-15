@@ -155,7 +155,7 @@ def check_indexer_first_correctness(
     """
     B: int = 2
     H: int = 4
-    num_keys: int = 64
+    num_keys: int = 32000
     d: int = 32
 
     # Replace __indexer_first function if file is provided
@@ -268,7 +268,7 @@ def check_indexer_next_correctness(
     """
     B: int = 2
     H: int = 4
-    num_keys: int = 64
+    num_keys: int = 32000
     d: int = 32
 
     # Replace __indexer_next function if file is provided

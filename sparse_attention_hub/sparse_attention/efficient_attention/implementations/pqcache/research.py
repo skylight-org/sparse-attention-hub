@@ -207,16 +207,16 @@ class PQCacheResearchBackend(EfficientAttentionResearchBackend):
                 - dropout: Dropout probability (0.0).
                 - sparse_meta_data: Dictionary containing PQ cache metadata for decoding step.
         """
-        sink_size: int = random.randint(1, max(1, num_keys // 4))
-        window_size: int = random.randint(1, max(1, num_keys // 4))
-        heavy_size: int = random.randint(1, max(1, num_keys // 4))
+        sink_size: int = 128
+        window_size: int = 128
+        heavy_size: int = 128
         
         # PQCache configuration parameters
-        pq_group_factor: int = random.choice([1, 2, 4])  # Common factors for head_dim
-        pq_bits: int = random.randint(4, 8)  # 16 to 256 centroids
-        kmeans_iter: int = random.randint(5, 20)
+        pq_group_factor: int = 2  # Common factors for head_dim
+        pq_bits: int = 6 # 16 to 256 centroids
+        kmeans_iter: int = 10
         init_offset: int = sink_size  # Typically matches sink_size
-        metric: str = random.choice(["euclidean", "ip"])
+        metric: str = "euclidean"
         
         research_attention_config: ResearchAttentionConfig = ResearchAttentionConfig(
             masker_configs=[

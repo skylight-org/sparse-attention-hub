@@ -237,30 +237,50 @@ def profile_indexer_first(
 
     with torch.no_grad():
         for i in range(num_timing_runs):
-            # Start timing
             if device.type == "cuda":
+                # Use CUDA events for accurate GPU timing
+                start_event: torch.cuda.Event = torch.cuda.Event(enable_timing=True)
+                end_event: torch.cuda.Event = torch.cuda.Event(enable_timing=True)
+                
+                start_event.record()
+                
+                # Run indexer_first
+                _: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = object2.indexer_first(
+                    query=query,
+                    key=key,
+                    value=value,
+                    module=module,
+                    attention_mask=attention_mask,
+                    scaling=scaling,
+                    dropout=dropout,
+                    sparse_meta_data=sparse_meta_data,
+                    layer_idx=0,
+                )
+                
+                end_event.record()
                 torch.cuda.synchronize()
-            start_time: float = time.perf_counter()
-
-            # Run indexer_first
-            _: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = object2.indexer_first(
-                query=query,
-                key=key,
-                value=value,
-                module=module,
-                attention_mask=attention_mask,
-                scaling=scaling,
-                dropout=dropout,
-                sparse_meta_data=sparse_meta_data,
-                layer_idx=0,
-            )
-
-            # End timing
-            if device.type == "cuda":
-                torch.cuda.synchronize()
-            end_time: float = time.perf_counter()
-
-            elapsed_time: float = (end_time - start_time) * 1000  # Convert to ms
+                
+                elapsed_time: float = start_event.elapsed_time(end_event)  # Already in ms
+            else:
+                # Fall back to perf_counter for CPU
+                start_time: float = time.perf_counter()
+                
+                # Run indexer_first
+                _: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = object2.indexer_first(
+                    query=query,
+                    key=key,
+                    value=value,
+                    module=module,
+                    attention_mask=attention_mask,
+                    scaling=scaling,
+                    dropout=dropout,
+                    sparse_meta_data=sparse_meta_data,
+                    layer_idx=0,
+                )
+                
+                end_time: float = time.perf_counter()
+                elapsed_time: float = (end_time - start_time) * 1000  # Convert to ms
+            
             times.append(elapsed_time)
 
     # Calculate statistics
@@ -314,7 +334,7 @@ def profile_indexer_next(
     """
     B: int = 1
     H: int = 32
-    num_keys: int = 256
+    num_keys: int = 32000
     d: int = 128
 
     # Replace __indexer_next function if file is provided
@@ -429,30 +449,50 @@ def profile_indexer_next(
 
     with torch.no_grad():
         for i in range(num_timing_runs):
-            # Start timing
             if device.type == "cuda":
+                # Use CUDA events for accurate GPU timing
+                start_event: torch.cuda.Event = torch.cuda.Event(enable_timing=True)
+                end_event: torch.cuda.Event = torch.cuda.Event(enable_timing=True)
+                
+                start_event.record()
+                
+                # Run indexer_next
+                _: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = object2.indexer_next(
+                    query=query,
+                    key=key,
+                    value=value,
+                    module=module,
+                    attention_mask=attention_mask,
+                    scaling=scaling,
+                    dropout=dropout,
+                    sparse_meta_data=sparse_meta_data,
+                    layer_idx=0,
+                )
+                
+                end_event.record()
                 torch.cuda.synchronize()
-            start_time: float = time.perf_counter()
-
-            # Run indexer_next
-            _: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = object2.indexer_next(
-                query=query,
-                key=key,
-                value=value,
-                module=module,
-                attention_mask=attention_mask,
-                scaling=scaling,
-                dropout=dropout,
-                sparse_meta_data=sparse_meta_data,
-                layer_idx=0,
-            )
-
-            # End timing
-            if device.type == "cuda":
-                torch.cuda.synchronize()
-            end_time: float = time.perf_counter()
-
-            elapsed_time: float = (end_time - start_time) * 1000  # Convert to ms
+                
+                elapsed_time: float = start_event.elapsed_time(end_event)  # Already in ms
+            else:
+                # Fall back to perf_counter for CPU
+                start_time: float = time.perf_counter()
+                
+                # Run indexer_next
+                _: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = object2.indexer_next(
+                    query=query,
+                    key=key,
+                    value=value,
+                    module=module,
+                    attention_mask=attention_mask,
+                    scaling=scaling,
+                    dropout=dropout,
+                    sparse_meta_data=sparse_meta_data,
+                    layer_idx=0,
+                )
+                
+                end_time: float = time.perf_counter()
+                elapsed_time: float = (end_time - start_time) * 1000  # Convert to ms
+            
             times.append(elapsed_time)
 
     # Calculate statistics

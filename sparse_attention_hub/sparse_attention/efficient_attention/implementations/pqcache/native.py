@@ -67,6 +67,7 @@ def __indexer_first(
 
 
 def __indexer_next(
+    query: torch.Tensor,
     key: torch.Tensor,
     weight_list_dtype: torch.dtype,
     sink_size: int,
@@ -90,6 +91,7 @@ def __indexer_next(
     3. Last window_size tokens (local window)
 
     Args:
+        query: Query tensor of shape (b, h, sq, d).
         key: Key tensor of shape (b, h_kv, sk, d).
         weight_list_dtype: Data type for weight_list tensor.
         sink_size: Number of sink tokens to attend to.
@@ -342,6 +344,7 @@ class PQCacheNativeBackend(EfficientAttentionNativeBackend):
             updated_pq_codebook,
             updated_pq_ip2l2_phi,
         ) = indexer_function(
+            query=query,
             key=key,
             weight_list_dtype=query.dtype,
             sink_size=self.sink_size,

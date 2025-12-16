@@ -1,0 +1,41 @@
+---
+alwaysApply: false
+---
+backend=native
+Backend=Native
+baseline=pqcache
+Baseline=PQCache
+function_name=next
+
+run the following to active correct conda environment
+```
+source /data/apdesai/anaconda3/bin/activate
+conda activate sparse_attention_hub 
+```
+
+You are supposed to write a function in 
+
+implementations/{baseline}/workspace/gen_imperative_code.py named __indexer_{function_name}() which is supposed to extract the core logic of constructing the sparsity for the case where sparse_meta_data has already been updated with metadata. Use the  implementations/{baseline}/research.py as the reference behavior and match the correctness using the correctness test specified below. __indexer_{function_name}() should not change the K,Q,V inputs. It should only change/create the other sparsity related tensors to be passed to the backend attention computation function.
+
+
+```
+CUDA_VISIBLE_DEVICES=0 python -m sparse_attention_hub.sparse_attention.efficient_attention.codegen.correctness \
+  --class1 sparse_attention_hub.sparse_attention.efficient_attention.implementations.{baseline}.research.{Baseline}ResearchBackend \
+  --class2 sparse_attention_hub.sparse_attention.efficient_attention.implementations.{baseline}.{backend}.{Baseline}{Backend}Backend \
+  --function indexer_{function_name} --indexer-{function_name}-file implementations/{baseline}/workspace/gen_imperative_code.py
+```
+
+The requirements are as follows,
+1. The code written in __{function_name}() should be imperative and should not use any functions from sparse_attention_hub. it should be a self contained. It can use other external libraries such as torch, flashinfer, and other libraries that provide efficiently implemented primitives
+
+2. You should evaluate the correctness and keep fixing issues until the behaviors of the codes (via correctness.py) matches exactly.
+
+
+Once acheived, run the following profiling script.
+
+```
+CUDA_VISIBLE_DEVICES=0 python -m sparse_attention_hub.sparse_attention.efficient_attention.codegen.profile \
+  --class1 sparse_attention_hub.sparse_attention.efficient_attention.implementations.{baseline}.research.{baseline}ResearchBackend \
+  --class2 sparse_attention_hub.sparse_attention.efficient_attention.implementations.{baseline}.{backend}.{baseline}{Backend}Backend \
+  --function indexer_{funtion_name} --indexer-{function_name}-file implementations/{baseline}/workspace/gen_imperative_code.py
+```

@@ -24,7 +24,7 @@ from ..efficient_attention_research_backend import (
     EfficientAttentionResearchBackendConfig,
 )
 from .util import move_sparse_meta_data_to_device
-
+import copy
 
 def load_indexer_function_from_file(
     file_path: str, function_name: str
@@ -307,7 +307,6 @@ def profile_indexer_first(
 
     print(f"\n🎉 Profiling completed! View trace in https://ui.perfetto.dev/")
     print(f"   Load file: {trace_path}")
-
     return timing_stats
 
 
@@ -368,6 +367,7 @@ def profile_indexer_next(
     if attention_mask is not None:
         attention_mask = attention_mask.to(device)
     sparse_meta_data = move_sparse_meta_data_to_device(sparse_meta_data, device)
+    sparse_meta_data_copy = copy.deepcopy(sparse_meta_data)
 
     # Create object2 of class2 using config
     config2_class_name: str = f"{class2.__name__}Config"
@@ -389,6 +389,7 @@ def profile_indexer_next(
     print(f"\n🔥 Running {num_warmup_runs} warmup iterations...")
     with torch.no_grad():
         for i in range(num_warmup_runs):
+            sparse_meta_data = copy.deepcopy(sparse_meta_data_copy)
             _: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = object2.indexer_next(
                 query=query,
                 key=key,
@@ -410,6 +411,7 @@ def profile_indexer_next(
     if device.type == "cuda":
         activities.append(ProfilerActivity.CUDA)
 
+    sparse_meta_data = copy.deepcopy(sparse_meta_data_copy)
     with profile(
         activities=activities,
         record_shapes=True,
@@ -419,6 +421,7 @@ def profile_indexer_next(
         with record_function("indexer_next"):
             with torch.no_grad():
                 for i in range(num_profile_runs):
+                    sparse_meta_data = copy.deepcopy(sparse_meta_data_copy)
                     _: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = object2.indexer_next(
                         query=query,
                         key=key,
@@ -453,9 +456,9 @@ def profile_indexer_next(
                 # Use CUDA events for accurate GPU timing
                 start_event: torch.cuda.Event = torch.cuda.Event(enable_timing=True)
                 end_event: torch.cuda.Event = torch.cuda.Event(enable_timing=True)
-                
+                sparse_meta_data = copy.deepcopy(sparse_meta_data_copy)
                 start_event.record()
-                
+                 
                 # Run indexer_next
                 _: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = object2.indexer_next(
                     query=query,
@@ -475,6 +478,8 @@ def profile_indexer_next(
                 elapsed_time: float = start_event.elapsed_time(end_event)  # Already in ms
             else:
                 # Fall back to perf_counter for CPU
+                sparse_meta_data = copy.deepcopy(sparse_meta_data_copy)
+
                 start_time: float = time.perf_counter()
                 
                 # Run indexer_next
@@ -519,6 +524,7 @@ def profile_indexer_next(
 
     print(f"\n🎉 Profiling completed! View trace in https://ui.perfetto.dev/")
     print(f"   Load file: {trace_path}")
+    print(times)
 
     return timing_stats
 

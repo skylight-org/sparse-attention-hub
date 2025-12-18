@@ -226,7 +226,13 @@ class SparseNativeBackend(SparseBackend):
         for b in range(sparse_len.shape[0]):
             for h in range(sparse_len.shape[1]):
                 if sparse_len[b, h] > 0:
-                    if not torch.equal(sparse_list[b, h, :sparse_len[b, h]], other_sparse_list[b, h, :other_sparse_len[b, h]]):
+                    # Check for SET equality (order-agnostic) since attention is a set operation
+                    # Sort both lists before comparing to ensure we're checking semantic correctness
+                    # rather than implementation details
+                    curr_len = sparse_len[b, h]
+                    sorted_sparse = torch.sort(sparse_list[b, h, :curr_len])[0]
+                    sorted_other = torch.sort(other_sparse_list[b, h, :curr_len])[0]
+                    if not torch.equal(sorted_sparse, sorted_other):
                         return False
         return True
 

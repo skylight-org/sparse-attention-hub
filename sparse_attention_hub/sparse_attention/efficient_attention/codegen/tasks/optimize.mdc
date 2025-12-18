@@ -34,7 +34,7 @@ Once correct optimized code implementing the plan is obtained, then you should p
 CUDA_VISIBLE_DEVICES=0 python -m sparse_attention_hub.sparse_attention.efficient_attention.codegen.profile \
   --class1 sparse_attention_hub.sparse_attention.efficient_attention.implementations.{baseline}.research.{baseline}ResearchBackend \
   --class2 sparse_attention_hub.sparse_attention.efficient_attention.implementations.{baseline}.{backend}.{baseline}{Backend}Backend \
-  --function indexer_{funtion_name} --indexer-{function_name}-file  {iteration_directory}/optimized_indexer.py &> {iteration_directory}/profile.log 
+  --function indexer-{funtion_name} --indexer-{function_name}-file  {iteration_directory}/optimized_indexer.py &> {iteration_directory}/profile.log 
 ```
 
 Use the dumped {iteration_directory}/profile* files to make a concise summary file in {iteration_directory}/summary.md which should note 

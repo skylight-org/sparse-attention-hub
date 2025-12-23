@@ -76,6 +76,193 @@ class ModelAdapterHF(ModelAdapter):
         """Clean up registered attention functions when the adapter is destroyed."""
         self._cleanup_attention_registration()
 
+    def _chunked_prefill_sparse(
+        self,
+        context_tokens: torch.Tensor,
+        sparse_meta_data: Dict[str, Any],
+        chunk_size: int,
+    ) -> Any:
+        """Perform chunked sparse prefill.
+
+        Processes context in chunks to build the KV cache incrementally,
+        enabling sparse attention on long contexts.
+
+        Args:
+            context_tokens: Input tokens tensor [1, seq_len]
+            sparse_meta_data: Sparse attention metadata dict
+            chunk_size: Size of each chunk
+
+        Returns:
+            Model outputs from last chunk (includes past_key_values)
+        """
+        total_len: int = context_tokens.shape[1]
+        past: Any = None
+        outputs: Any = None
+
+        for i in range(0, total_len, chunk_size):
+            chunk: torch.Tensor = context_tokens[:, i : i + chunk_size]
+            pos_ids: torch.Tensor = torch.arange(
+                i, i + chunk.shape[1], device=chunk.device
+            ).unsqueeze(0)
+
+            outputs = self.model(
+                chunk,
+                past_key_values=past,
+                position_ids=pos_ids,
+                use_cache=True,
+                sparse_meta_data=sparse_meta_data,
+            )
+            past = outputs.past_key_values
+
+        return outputs
+
+    def _chunked_prefill_dense(
+        self,
+        context_tokens: torch.Tensor,
+        sparse_meta_data: Dict[str, Any],
+        chunk_size: int,
+    ) -> Any:
+        """Perform chunked dense prefill.
+
+        Processes context in chunks to build the KV cache incrementally.
+        Useful for processing contexts that would OOM with full prefill.
+
+        Args:
+            context_tokens: Input tokens tensor [1, seq_len]
+            sparse_meta_data: Sparse attention metadata dict
+            chunk_size: Size of each chunk
+
+        Returns:
+            Model outputs from last chunk (includes past_key_values)
+        """
+        total_len: int = context_tokens.shape[1]
+        past: Any = None
+        outputs: Any = None
+
+        for i in range(0, total_len, chunk_size):
+            chunk: torch.Tensor = context_tokens[:, i : i + chunk_size]
+            pos_ids: torch.Tensor = torch.arange(
+                i, i + chunk.shape[1], device=chunk.device
+            ).unsqueeze(0)
+
+            outputs = self.model(
+                chunk,
+                past_key_values=past,
+                position_ids=pos_ids,
+                use_cache=True,
+                sparse_meta_data=sparse_meta_data,
+            )
+            past = outputs.past_key_values
+
+        return outputs
+
+    def process_chunked_prefill_request(
+        self,
+        request: Request,
+        generation_kwargs: Dict[str, Any],
+        request_kwargs: Dict[str, Any],
+        **kwargs: Dict[str, Any],
+    ) -> RequestResponse:
+        """Process request using chunked prefill for long contexts.
+
+        Breaks the context into chunks and processes them sequentially to build
+        the KV cache, enabling processing of contexts longer than what would
+        fit in memory with a single forward pass.
+
+        Args:
+            request: The request to process
+            generation_kwargs: Parameters for model generation (max_new_tokens, etc.)
+            request_kwargs: Parameters for request processing:
+                - prefill_chunk_size (required): Size of each chunk
+                - max_context_length (optional): Max context length, default unlimited
+
+        Returns:
+            response: The response to the request
+
+        Raises:
+            ValueError: If prefill_chunk_size is not provided or invalid
+        """
+        # Parse and validate chunk_size
+        chunk_size: int = int(request_kwargs.get("prefill_chunk_size", 0))
+        if chunk_size <= 0:
+            raise ValueError(
+                "prefill_chunk_size must be provided and > 0 for "
+                "process_chunked_prefill_request()"
+            )
+
+        max_context_length: int = request_kwargs.get("max_context_length", INT_MAX)
+
+        print(
+            f" Processing chunked prefill: max_context={max_context_length}, "
+            f"chunk_size={chunk_size}",
+            flush=True,
+        )
+
+        # Prepare questions
+        questions: List[str] = (
+            request.questions
+            if isinstance(request.questions, list)
+            else [request.questions]
+        )
+
+        context, questions = self._preprocess_context_and_questions(
+            request.context, questions, request.answer_prefix
+        )
+
+        # Tokenize and truncate context
+        context_tokens: torch.Tensor = self.tokenizer.encode(
+            context, return_tensors="pt"
+        )[:, :max_context_length]
+
+        if self.device is not None:
+            context_tokens = context_tokens.to(self.device)
+
+        print(f"Context tokens: {context_tokens.shape}")
+
+        responses: List[str] = []
+        self.model.eval()
+
+        with torch.no_grad():
+            for question in questions:
+                sparse_meta_data: Dict[str, Any] = {}
+
+                question_tokens: torch.Tensor = self.tokenizer.encode(
+                    question, return_tensors="pt"
+                )
+                if self.device is not None:
+                    question_tokens = question_tokens.to(self.device)
+
+                # Choose sparse or dense chunked prefill
+                if self._sparse_attention_available:
+                    with self.enable_sparse_mode():
+                        context_outputs: Any = self._chunked_prefill_sparse(
+                            context_tokens, sparse_meta_data, chunk_size
+                        )
+                        response_text: str = self._generate_response(
+                            question_tokens,
+                            context_outputs,
+                            sparse_meta_data,
+                            generation_kwargs,
+                            **kwargs,
+                        )
+                else:
+                    context_outputs = self._chunked_prefill_dense(
+                        context_tokens, sparse_meta_data, chunk_size
+                    )
+                    response_text = self._generate_response(
+                        question_tokens,
+                        context_outputs,
+                        sparse_meta_data,
+                        generation_kwargs,
+                        **kwargs,
+                    )
+
+                responses.append(response_text)
+
+        if isinstance(request.questions, str):
+            return RequestResponse(responses=responses[0])
+        return RequestResponse(responses=responses)
+
     def process_request(
         self,
         request: Request,

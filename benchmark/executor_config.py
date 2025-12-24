@@ -6,7 +6,7 @@ parallel benchmark execution across multiple GPUs using multiprocessing.
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import Field, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Tuple
 import multiprocessing
@@ -107,6 +107,11 @@ class AdapterConfig:
     adapter_name: str = "huggingface"
     model_kwargs: Optional[Dict[str, Any]] = None
     tokenizer_kwargs: Optional[Dict[str, Any]] = None
+
+    swebench_api_endpoint: Optional[str] = Field(
+        default="http://localhost:8000/submit", 
+        description="Endpoint for SWE-bench patch evaluation"
+    )
     
     def __post_init__(self) -> None:
         """Initialize default values and validate configuration."""

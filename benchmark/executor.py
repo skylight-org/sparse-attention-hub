@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from queue import Empty
 from contextlib import contextmanager
 from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
+from benchmark.swebench.submitter import SWEBenchAPIClient
+
 
 # Set multiprocessing start method to 'spawn' for CUDA compatibility
 if multiprocessing.get_start_method(allow_none=True) != 'spawn':
@@ -251,6 +253,42 @@ def _benchmark_worker(
                         generation_kwargs=stub.generation_kwargs,
                         request_kwargs=stub.request_kwargs
                     )
+
+                    if stub.benchmark_name == "swebench" and stub.adapter_config.swebench_api_endpoint:
+                        try:
+                            import pandas as pd
+                            results_csv = Path(stub.result_dir) / "raw_results.csv"
+                            
+                            if results_csv.exists():
+                                logger.info(f"Worker {worker_id}: Preparing SWE-bench submissions from {results_csv}")
+                                df = pd.read_csv(results_csv)
+
+                                df["run_id"] = f"{stub.model_name}_{stub.sparse_config_name}"
+                                df["model_name"] = stub.model_name
+                                df["sparse_attention_config"] = str(stub.sparse_attention_config)
+                                
+                                submission_payload = benchmark.post_run_submit(df)
+                                
+                                client = SWEBenchAPIClient(endpoint=stub.adapter_config.swebench_api_endpoint)
+                                client.submit_batch(submission_payload["submissions"])
+                                
+                                #update local metrics to reflect API status
+                                metrics["api_submission"] = "success"
+                                metrics["num_submissions"] = submission_payload["num_submissions"]
+                                logger.info(f"Worker {worker_id}: Successfully submitted patches to {stub.adapter_config.swebench_api_endpoint}")
+                            else:
+                                logger.warning(f"Worker {worker_id}: SWE-bench results file not found at {results_csv}")
+                                
+                        except Exception as api_err:
+                            logger.error(f"Worker {worker_id}: SWE-bench API submission failed: {api_err}")
+                            metrics["api_submission"] = f"failed: {str(api_err)}"
+
+
+                                
+                                
+                                
+                    
+                    
                     metric_logger.flush()
                     
                     execution_time = time.time() - start_time

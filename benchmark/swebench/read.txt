@@ -1,0 +1,8 @@
+To run:
+
+#in Terminal 1
+uvicorn benchmark.swebench.api_server:app --port 8000
+
+run script in /scripts with python3 -m
+
+

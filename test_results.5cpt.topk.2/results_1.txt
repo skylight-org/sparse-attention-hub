@@ -1,0 +1,1 @@
+K=7 L=70 top_t=8 heavy=0.2 | cot=20.0 | cand_avg=8313.02 cand_min=1751 cand_max=33178 | final_avg=5777.05 final_min=1751 final_max=6656

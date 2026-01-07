@@ -1,0 +1,14 @@
+K=7 L=70 top_t=10 heavy=512 | triviaqa=69.72 | cand_avg=3459.95 cand_min=1 cand_max=22075 | final_avg=478.10 final_min=1 final_max=512
+K=7 L=70 top_t=12 heavy=512 | triviaqa=69.86 | cand_avg=4095.16 cand_min=1 cand_max=22084 | final_avg=437.64 final_min=1 final_max=512
+K=7 L=70 top_t=20 heavy=512 | triviaqa=68.06 | cand_avg=4874.15 cand_min=1 cand_max=22145 | final_avg=312.79 final_min=1 final_max=512
+K=7 L=70 top_t=25 heavy=512 | triviaqa=66.69 | cand_avg=5704.22 cand_min=1 cand_max=22146 | final_avg=303.67 final_min=1 final_max=512
+K=7 L=65 top_t=10 heavy=512 | triviaqa=69.36 | cand_avg=3225.60 cand_min=1 cand_max=21966 | final_avg=491.50 final_min=1 final_max=512
+K=7 L=65 top_t=12 heavy=512 | triviaqa=69.32 | cand_avg=3904.23 cand_min=1 cand_max=22036 | final_avg=452.56 final_min=1 final_max=512
+K=7 L=65 top_t=20 heavy=512 | triviaqa=68.06 | cand_avg=4838.11 cand_min=1 cand_max=22145 | final_avg=329.58 final_min=1 final_max=512
+K=7 L=65 top_t=25 heavy=512 | triviaqa=68.56 | cand_avg=5602.39 cand_min=1 cand_max=22146 | final_avg=310.84 final_min=1 final_max=512
+K=7 L=60 top_t=10 heavy=512 | triviaqa=68.22 | cand_avg=2935.58 cand_min=1 cand_max=21778 | final_avg=499.22 final_min=1 final_max=512
+K=7 L=60 top_t=12 heavy=512 | triviaqa=70.22 | cand_avg=3721.97 cand_min=1 cand_max=21992 | final_avg=472.16 final_min=1 final_max=512
+K=7 L=60 top_t=20 heavy=512 | triviaqa=69.76 | cand_avg=4856.21 cand_min=1 cand_max=22142 | final_avg=347.61 final_min=1 final_max=512
+K=7 L=60 top_t=25 heavy=512 | triviaqa=67.56 | cand_avg=5355.70 cand_min=1 cand_max=22144 | final_avg=312.24 final_min=1 final_max=512
+K=7 L=55 top_t=10 heavy=512 | triviaqa=66.19 | cand_avg=2555.39 cand_min=1 cand_max=21612 | final_avg=502.91 final_min=1 final_max=512
+K=7 L=55 top_t=12 heavy=512 | triviaqa=69.86 | cand_avg=3473.21 cand_min=1 cand_max=21886 | final_avg=492.22 final_min=1 final_max=512

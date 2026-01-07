@@ -1,0 +1,14 @@
+K=7 L=70 top_t=8 heavy=0.2 | 0shot=26.0 | cand_avg=8172.58 cand_min=1751 cand_max=32525 | final_avg=5662.39 final_min=1751 final_max=6516
+K=7 L=70 top_t=10 heavy=0.2 | 0shot=29.0 | cand_avg=8751.11 cand_min=1 cand_max=32538 | final_avg=5679.38 final_min=1 final_max=6510
+K=7 L=70 top_t=12 heavy=0.2 | 0shot=30.0 | cand_avg=10466.35 cand_min=1 cand_max=32577 | final_avg=5699.73 final_min=1 final_max=6516
+K=7 L=70 top_t=14 heavy=0.2 | 0shot=29.0 | cand_avg=12487.02 cand_min=1 cand_max=32584 | final_avg=5591.28 final_min=1 final_max=6516
+K=7 L=70 top_t=16 heavy=0.2 | 0shot=29.0 | cand_avg=14737.28 cand_min=1 cand_max=32579 | final_avg=5457.79 final_min=1 final_max=6516
+K=7 L=65 top_t=8 heavy=0.2 | 0shot=27.0 | cand_avg=8240.89 cand_min=1752 cand_max=32456 | final_avg=5682.29 final_min=1752 final_max=6516
+K=7 L=65 top_t=10 heavy=0.2 | 0shot=31.0 | cand_avg=8472.99 cand_min=1 cand_max=32541 | final_avg=5672.45 final_min=1 final_max=6512
+K=7 L=65 top_t=12 heavy=0.2 | 0shot=29.0 | cand_avg=9762.27 cand_min=1 cand_max=32574 | final_avg=5691.73 final_min=1 final_max=6516
+K=7 L=65 top_t=14 heavy=0.2 | 0shot=30.0 | cand_avg=11645.95 cand_min=1 cand_max=32550 | final_avg=5659.17 final_min=1 final_max=6511
+K=7 L=65 top_t=16 heavy=0.2 | 0shot=29.0 | cand_avg=13809.14 cand_min=1 cand_max=32578 | final_avg=5531.98 final_min=1 final_max=6516
+K=7 L=60 top_t=8 heavy=0.2 | 0shot=29.0 | cand_avg=8321.05 cand_min=1596 cand_max=32423 | final_avg=5677.02 final_min=1596 final_max=6516
+K=7 L=60 top_t=10 heavy=0.2 | 0shot=32.0 | cand_avg=8308.46 cand_min=1 cand_max=32559 | final_avg=5672.28 final_min=1 final_max=6516
+K=7 L=60 top_t=12 heavy=0.2 | 0shot=28.0 | cand_avg=9167.39 cand_min=1 cand_max=32565 | final_avg=5670.79 final_min=1 final_max=6516
+K=7 L=60 top_t=14 heavy=0.2 | 0shot=29.0 | cand_avg=10809.32 cand_min=1 cand_max=32582 | final_avg=5694.02 final_min=1 final_max=6516

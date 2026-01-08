@@ -367,13 +367,13 @@ class ModelAdapterHF(ModelAdapter):
             Generated text response
 
         TODO:
-            move to huggingface genera`te() to leverage all possible generations
+            move to huggingface generate() to leverage all possible generations
             pass generation_kwargs appropriately
         """
         if self.tokenizer is None:
             raise ValueError("Tokenizer not initialized")
 
-        max_new_tokens: int = generation_kwargs.get("max_new_tokens", 50)  # type: ignore
+        max_new_tokens: int = generation_kwargs.get("max_new_tokens", 4096)  # type: ignore
         context_length: int = context_outputs.past_key_values.get_seq_length()
 
         position_ids = torch.arange(

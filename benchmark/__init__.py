@@ -18,6 +18,7 @@ from . import (
     ruler16k,
     ruler32k,
     zero_scrolls,
+    swebench,
 )
 
 # Import the base benchmark class
@@ -62,4 +63,5 @@ __all__ = [
     "zero_scrolls",
     "ruler32k",
     "ruler16k",
+    "swebench",
 ]

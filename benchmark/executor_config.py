@@ -107,6 +107,7 @@ class AdapterConfig:
     adapter_name: str = "huggingface"
     model_kwargs: Optional[Dict[str, Any]] = None
     tokenizer_kwargs: Optional[Dict[str, Any]] = None
+    swebench_api_endpoint: Optional[str] = None
     
     def __post_init__(self) -> None:
         """Initialize default values and validate configuration."""
@@ -379,6 +380,9 @@ def generate_benchmark_stubs(
                             subset=subset
                         )
                         
+                        request_kwargs_with_dir = request_kwargs.copy()
+                        request_kwargs_with_dir["result_dir"] = result_dir
+                        
                         stub = BenchmarkStub(
                             model_name=model_name,
                             sparse_config_name=sparse_config_name,
@@ -387,7 +391,7 @@ def generate_benchmark_stubs(
                             subset=subset,
                             adapter_config=adapter_config,
                             generation_kwargs=generation_kwargs.copy(),
-                            request_kwargs=request_kwargs.copy(),
+                            request_kwargs=request_kwargs_with_dir,
                             result_dir=result_dir
                         )
                         stubs.append(stub)
@@ -402,6 +406,9 @@ def generate_benchmark_stubs(
                         subset=None
                     )
                     
+                    request_kwargs_with_dir = request_kwargs.copy()
+                    request_kwargs_with_dir["result_dir"] = result_dir
+                    
                     stub = BenchmarkStub(
                         model_name=model_name,
                         sparse_config_name=sparse_config_name,
@@ -410,7 +417,7 @@ def generate_benchmark_stubs(
                         subset=None,
                         adapter_config=adapter_config,
                         generation_kwargs=generation_kwargs.copy(),
-                        request_kwargs=request_kwargs.copy(),
+                        request_kwargs=request_kwargs_with_dir,
                         result_dir=result_dir
                     )
                     stubs.append(stub)

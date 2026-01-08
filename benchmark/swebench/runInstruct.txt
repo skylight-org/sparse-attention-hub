@@ -1,0 +1,22 @@
+- In benchmark/scripts/run_swebench.py:
+Set model_names, subsets (split by gpu count), and gpu_ids and max_concurrent_runs
+
+
+- dependencies
+deprecate torch in pyproject.toml to torch>=2.5.1
+- build docker image
+sudo docker build -t sparse-benchmark -f Dockerfile.benchmark .
+
+- run benchmark
+sudo docker run --runtime=nvidia --gpus all \
+    -v $(pwd)/results:/app/results \
+    -v /home/user/swe-bench-repos:/root/swe-bench-repos \
+    sparse-benchmark
+
+- merge results across gpu
+jq -s 'add' results/.../part1/metrics.json results/.../part2/metrics.json > final_results.json
+
+
+- submit for evaliuation using CLI
+sb-cli submit swe-bench_verified test --predictions_path final_results.json --run_id my_experiment_name
+

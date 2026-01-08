@@ -29,7 +29,7 @@ classifiers = [
 keywords = ["attention", "sparse", "transformer", "deep-learning", "pytorch"]
 
 dependencies = [
-    "torch>=2.7.1",
+    "torch>=2.5.1",
     "numpy>=1.21.0",
     "matplotlib>=3.5.0",
     "seaborn>=0.11.0",

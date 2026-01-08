@@ -1,0 +1,31 @@
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel
+
+WORKDIR /app
+
+# Install git for repo checkouts in agent loop
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+RUN git config --global --add safe.directory '*'
+
+# Copy dependency files
+COPY pyproject.toml .
+COPY requirements.txt .
+
+# Install dependencies - pinning torch/torchvision to avoid nms error
+RUN pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+RUN pip install --no-cache-dir .
+
+# Copy the entire project
+COPY . .
+
+# Create directories for results and repo cache
+RUN mkdir -p /app/results /root/swe-bench-repos
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+# Default command
+CMD ["sh", "-c", "rm -rf results/Qwen_Qwen2.5-Coder-32B-Instruct/ && python benchmark/scripts/run_swebench.py"]
+
+#if no delete 
+#CMD ["python", "benchmark/scripts/run_swebench.py"]

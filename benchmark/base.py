@@ -247,6 +247,9 @@ class Benchmark(ABC):
         print("Processing requests through adapter...")
         results_df: pd.DataFrame = self._process_all_requests(adapter, dataset_df, generation_kwargs, request_kwargs)
         
+        # Add model info to results for downstream evaluation (e.g., SWE-bench sb-cli)
+        results_df["model_name_or_path"] = getattr(adapter, "model_name", "unknown")
+        
         # Compute evaluation metrics
         print("Computing evaluation metrics...")
         metrics: Dict[str, Any] = self.post_run_evaluate(results_df)

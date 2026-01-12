@@ -129,6 +129,7 @@ class ResearchAttention(SparseAttention):
             keys=keys,
             values=values,
             attention_mask=attention_mask,
+            sinks=getattr(module, "sinks", None),
             scaling=scaling,
             dropout=dropout,
             sparse_attention_mask=sparse_attention_mask,

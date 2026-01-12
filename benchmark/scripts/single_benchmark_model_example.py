@@ -24,8 +24,8 @@ import torch
 import sys
 
 # Change to directory two levels below current location
-os.chdir('/data/apdesai/code/sparse-attention-hub')
-sys.path.insert(0, '/data/apdesai/code/sparse-attention-hub')
+os.chdir('/scratch/sj157/sparse-attention-hub')
+sys.path.insert(0, '/scratch/sj157/sparse-attention-hub')
 
 from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
@@ -40,8 +40,7 @@ from benchmark.ruler32k import Ruler32K
 from sparse_attention_hub.adapters import ModelAdapterHF
 
 def main():
-    model_name = "Qwen/Qwen3-4B-Instruct-2507"
-    device = 0
+    model_name = "openai/gpt-oss-20b"
 
     # sorted_channel_file is available in the author's repository
     # https://github.com/andy-yang-1/DoubleSparse/tree/main/config
@@ -58,8 +57,8 @@ def main():
     adapter = ModelAdapterHF(
         model_name=model_name,
         sparse_attention_config=sparse_attention_config,
-        model_kwargs= {"torch_dtype": torch.bfloat16, "attn_implementation": "flash_attention_2"},
-        device=device
+        # Use default attention implementation from the model (no FlashAttention override)
+        model_kwargs={"torch_dtype": torch.bfloat16},
     )
     
     #benchmark = LongBench(['passage_retrieval_en'])
@@ -76,7 +75,7 @@ def main():
             ],
         )
     metric_logger.flush()
-    benchmark.run_benchmark(adapter, result_dir, request_kwargs={"max_requests": 100, "max_context_length": 1000000}, generation_kwargs={"max_new_tokens": 500})
+    benchmark.run_benchmark(adapter, result_dir, request_kwargs={"max_requests": 50, "max_context_length": 320000}, generation_kwargs={"max_new_tokens": 500})
     
 if __name__ == "__main__":
     main() 

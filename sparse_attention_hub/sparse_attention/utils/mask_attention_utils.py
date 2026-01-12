@@ -347,6 +347,7 @@ def get_masked_attention_output(
     keys: torch.Tensor,
     values: torch.Tensor,
     attention_mask: Optional[torch.Tensor],
+    sinks: Optional[torch.Tensor],
     scaling: float,
     dropout: float,
     sparse_attention_mask: Mask,
@@ -394,6 +395,36 @@ def get_masked_attention_output(
     # Use internal helpers with pre-computed weights
     num: torch.Tensor = _get_attention_numerator(exp_attention_weights, value_states)
     den: torch.Tensor = _get_attention_denominator(exp_attention_weights)
+
+    # --- GPT-OSS sinks: affect normalization only ---
+    if sinks is not None:
+        # sinks expected as [H] (module.sinks), but support [B,H,Q,1] too
+        if sinks.ndim == 1:
+            B, H, Q = queries.shape[0], queries.shape[1], queries.shape[2]
+            sinks_row = sinks.reshape(1, -1, 1, 1).expand(B, H, Q, 1)  # [B,H,Q,1]
+        elif sinks.ndim == 4:
+            sinks_row = sinks  # already [B,H,Q,1]
+        else:
+            raise ValueError(f"Unexpected sinks shape: {tuple(sinks.shape)}")
+
+        print("Sink USED!")
+        # Recompute the same logits row-wise max used by the exp trick
+        num_key_value_groups_k: int = _get_num_key_value_groups(queries, keys)
+        key_states = repeat_kv(keys, num_key_value_groups_k)
+
+        logits = torch.matmul(queries, key_states.transpose(2, 3)) * scaling  # [B,H,Q,K]
+        if attention_mask is not None:
+            logits = logits + attention_mask[:, :, :, : key_states.shape[-2]]
+
+        row_max = logits.max(dim=-1, keepdim=True).values  # [B,H,Q,1]
+
+        # GPT-OSS subtracts max over concatenated [logits, sink]
+        row_max = torch.maximum(row_max, sinks_row)
+
+        # sink contributes exp(sink - row_max) to denominator
+        sink_exp = torch.exp(sinks_row - row_max).to(den.dtype)  # [B,H,Q,1]
+        den = den + sink_exp
+
 
     # Compute final attention output
     attention_output: torch.Tensor = (num / den).transpose(1, 2).contiguous()

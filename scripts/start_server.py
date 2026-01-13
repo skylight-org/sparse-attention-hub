@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simplified OpenAI-compatible API server for sparse-attention-hub models."""
+""" OpenAI-compatible API server for sparse-attention-hub models."""
 
 import argparse
 import os
@@ -123,7 +123,7 @@ def main():
     adapter = ModelAdapterHF(
         model_name=args.model,
         sparse_attention_config=CONFIGS[args.config],
-        model_kwargs={"torch_dtype": torch.bfloat16, "device_map": "auto", "attn_implementation": "sdpa"},
+        model_kwargs={"torch_dtype": torch.bfloat16, "device_map": "cuda:0", "attn_implementation": "sdpa"},
     )
 
     # Device synchronization fix for multi-GPU setups

@@ -119,19 +119,7 @@ class ResearchAttention(SparseAttention):
                 metadata={"layer_idx": kwargs["layer_idx"]},
             )
 
-        # pull sinks out of kwargs if present to avoid passing it twice
-        sinks_from_kwargs = kwargs.pop("sinks", None)
-
-        # GPT-OSS passes sinks as s_aux in its forward; pull it too (optional but useful)
         s_aux = kwargs.pop("s_aux", None)
-
-        # decide final sinks source (priority: explicit sinks in kwargs, then s_aux, then module.sinks)
-        sinks = sinks_from_kwargs
-        if sinks is None and s_aux is not None:
-            sinks = s_aux
-        if sinks is None:
-            sinks = getattr(module, "sinks", None)
-
         # Call compute_masked_attention_output on the result of the last mask
         # Always request attention weights to match the expected return signature
         attention_output: torch.Tensor
@@ -142,7 +130,7 @@ class ResearchAttention(SparseAttention):
             keys=keys,
             values=values,
             attention_mask=attention_mask,
-            sinks=sinks,
+            sinks=s_aux,
             scaling=scaling,
             dropout=dropout,
             sparse_attention_mask=sparse_attention_mask,

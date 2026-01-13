@@ -1085,16 +1085,31 @@ class TestGetMaskedAttentionOutputExternal:
             return_attention_weights=True,
         )
 
-        # Shape sanity checks (important for catching regressions)
-        assert out_no_sink.shape == (batch_size, seq_len, d_model)
-        assert out_with_sink.shape == (batch_size, seq_len, d_model)
-        assert weights_no_sink.shape == (batch_size, num_heads, seq_len, seq_len)
+        # Shape sanity checks
+        assert out_no_sink.shape == (
+            batch_size,
+            seq_len,
+            num_heads,
+            d_model,
+        )  # (B,Q,H,D)
+        assert out_with_sink.shape == (
+            batch_size,
+            seq_len,
+            num_heads,
+            d_model,
+        )  # (B,Q,H,D)
+        assert weights_no_sink.shape == (
+            batch_size,
+            num_heads,
+            seq_len,
+            seq_len,
+        )  # (B,H,Q,K)
         assert weights_with_sink.shape == (batch_size, num_heads, seq_len, seq_len)
 
-        # Expected outputs: (B, Q, D) because get_masked_attention_output returns transpose(1,2)
-        expected_no_sink = torch.tensor([[[0.5, 0.5], [0.5, 0.5]]])
+        # Expected outputs: (B, Q, H, D)
+        expected_no_sink = torch.tensor([[[[0.5, 0.5]], [[0.5, 0.5]]]])
         expected_with_sink = torch.tensor(
-            [[[1.0 / 3.0, 1.0 / 3.0], [1.0 / 3.0, 1.0 / 3.0]]]
+            [[[[1.0 / 3.0, 1.0 / 3.0]], [[1.0 / 3.0, 1.0 / 3.0]]]]
         )
 
         torch.testing.assert_close(out_no_sink, expected_no_sink, atol=1e-6, rtol=1e-6)
@@ -1119,9 +1134,7 @@ class TestGetMaskedAttentionOutputExternal:
             rtol=1e-6,
         )
 
-        # Optional robustness: sink should only scale all key probs by the same factor when logits are equal.
-        # Here: [1/3,1/3] vs [1/2,1/2] => scale factor = 2/3
-        scale = (weights_with_sink / weights_no_sink).mean().item()
-        torch.testing.assert_close(
-            torch.tensor(scale), torch.tensor(2.0 / 3.0), atol=1e-6, rtol=1e-6
-        )
+        # Robustness: sink should scale all key probs by the same factor when logits are equal.
+        # Here: [1/3,1/3] vs [1/2,1/2] => scale factor = 2/3 everywhere.
+        scale = (weights_with_sink / weights_no_sink).mean()
+        torch.testing.assert_close(scale, torch.tensor(2.0 / 3.0), atol=1e-6, rtol=1e-6)

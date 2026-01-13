@@ -215,10 +215,10 @@ class ModelAdapterHF(ModelAdapter):
                 layer_idx = getattr(module, "layer_idx", None)
                 if layer_idx is not None:
                     kwargs["layer_idx"] = layer_idx
-            
-            if hasattr(module, "sinks"):
-                print("Sink ADDed!")
-                kwargs["sinks"] = module.sinks 
+
+            # GPT-OSS may already provide sinks in kwargs; only inject if missing
+            if hasattr(module, "sinks") and "sinks" not in kwargs:
+                kwargs["sinks"] = module.sinks
 
             if "sparse_meta_data" in kwargs:
                 sparse_meta_data: Dict[Any, Any] = kwargs["sparse_meta_data"]

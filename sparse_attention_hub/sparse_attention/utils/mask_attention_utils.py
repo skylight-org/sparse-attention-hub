@@ -407,12 +407,13 @@ def get_masked_attention_output(
         else:
             raise ValueError(f"Unexpected sinks shape: {tuple(sinks.shape)}")
 
-        print("Sink USED!")
         # Recompute the same logits row-wise max used by the exp trick
         num_key_value_groups_k: int = _get_num_key_value_groups(queries, keys)
         key_states = repeat_kv(keys, num_key_value_groups_k)
 
-        logits = torch.matmul(queries, key_states.transpose(2, 3)) * scaling  # [B,H,Q,K]
+        logits = (
+            torch.matmul(queries, key_states.transpose(2, 3)) * scaling
+        )  # [B,H,Q,K]
         if attention_mask is not None:
             logits = logits + attention_mask[:, :, :, : key_states.shape[-2]]
 
@@ -424,7 +425,6 @@ def get_masked_attention_output(
         # sink contributes exp(sink - row_max) to denominator
         sink_exp = torch.exp(sinks_row - row_max).to(den.dtype)  # [B,H,Q,1]
         den = den + sink_exp
-
 
     # Compute final attention output
     attention_output: torch.Tensor = (num / den).transpose(1, 2).contiguous()

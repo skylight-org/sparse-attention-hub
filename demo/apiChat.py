@@ -46,7 +46,7 @@ def main():
         user_content = f"Context:\n{context}\n\nQuestion:\n{question}"
         messages.append({"role": "user", "content": user_content})
 
-        print("\nGenerating response via API...")
+        print("\nGenerating response...")
         try:
             response = requests.post(
                 url,

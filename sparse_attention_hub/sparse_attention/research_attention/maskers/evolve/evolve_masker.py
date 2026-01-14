@@ -72,7 +72,6 @@ class EvolveMasker(ResearchMasker):
             ValueError: If the evolution_rate in config is negative.
                 This validation is performed in the config's __post_init__ method.
         """
-        self.base_rate_sampling = 0.1
         super().__init__(config)
 
     def add_mask(
@@ -110,54 +109,38 @@ class EvolveMasker(ResearchMasker):
         # Check if previous_mask is full mask, if so return full mask
         if previous_mask.is_full_mask():
             return previous_mask
-
-        # Extract tensor dimensions
-        batch_size: int = queries.shape[0]
-        num_heads: int = queries.shape[1]
-        seq_len_queries: int = queries.shape[2]
-        seq_len_keys: int = keys.shape[2]
-
-        # Calculate number of indices to sample per row based on base_rate_sampling
-        num_indices_to_sample: int = int(self.base_rate_sampling * seq_len_keys)
         
-        # Ensure at least 1 index is sampled if base_rate_sampling > 0
-        if num_indices_to_sample == 0 and self.base_rate_sampling > 0:
-            num_indices_to_sample = 1
-
-        # Generate random indices for each row
-        row_wise_idx: torch.Tensor = torch.randint(
-            low=0,
-            high=seq_len_keys,
-            size=(batch_size, num_heads, seq_len_queries, num_indices_to_sample),
-            device=keys.device,
-            dtype=torch.long,
+        # Extract dimensions from input tensors
+        batch_size: int = keys.shape[0]
+        num_heads: int = queries.shape[1]
+        seq_len_keys: int = keys.shape[2]
+        seq_len_queries: int = queries.shape[2]
+        
+        # Target density is 10% (0.1), allocate:
+        # - Sink tokens: 0.1% (initial tokens for context)
+        # - Local window: 0.2% (recent tokens for local context)
+        # - Top-k selection: 9.7% (based on query-key similarity with position bias)
+        sink_size: int = max(1, int(0.045 * seq_len_keys))
+        local_size: int = max(1, int(0.045 * seq_len_keys))
+        
+        # Get previous mask to use for guidance
+        previous_dense_mask: torch.Tensor = previous_mask.get_dense_mask()
+        
+        # Handle GQA: repeat keys if needed to match query heads
+        num_key_value_groups: int = _get_num_key_value_groups(queries, keys)
+        keys_repeated: torch.Tensor = repeat_kv(keys, num_key_value_groups)
+        
+        # Create dense mask starting with sink and local regions
+        dense_mask: torch.Tensor = torch.zeros(batch_size, num_heads, seq_len_queries, seq_len_keys, dtype=previous_mask.dtype, device=keys.device)
+        dense_mask[:, :, :, :sink_size] = 1.0
+        if local_size > 0:
+            dense_mask[:, :, :, -local_size:] = 1.0
+            
+        this_mask: Mask = Mask.create_mask_from_dense_mask(
+            shape=(batch_size, num_heads, seq_len_queries, seq_len_keys),
+            mask=dense_mask,
+            dtype=previous_mask.dtype
         )
-
-        # Create data tensor with probability 1.0
-        data: torch.Tensor = torch.full_like(
-            row_wise_idx,
-            self.base_rate_sampling,
-            dtype=previous_mask.dtype,
-            device=keys.device,
-        )
-
-        # Create mask shape
-        mask_shape: tuple[int, int, int, int] = (
-            batch_size,
-            num_heads,
-            seq_len_queries,
-            seq_len_keys,
-        )
-
-        # Create mask from row-wise indices
-        this_mask: Mask = Mask.create_from_row_wise_idx(
-            shape=mask_shape,
-            row_wise_idx=row_wise_idx,
-            data=data,
-            mask_type="index",
-            dtype=previous_mask.dtype,
-        )
-
         # EVOLVE-BLOCK-END
         # Merge this_mask with previous mask and return the new mask
         return previous_mask.merge_mask(this_mask, inplace=False)

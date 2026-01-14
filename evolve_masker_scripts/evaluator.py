@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 
 BASE_DIR = "/data/apdesai/code/sparse-attention-hub"
+DENSITY_TARGET = 0.1
 
 
 def read_micro_metrics(result_dir: str):
@@ -73,7 +74,6 @@ def read_micro_metrics(result_dir: str):
     average_density = sum(density_values) / len(density_values) if density_values else 0.0
     average_error = sum(error_values) / len(error_values) if error_values else 0.0
 
-    DENSITY_TARGET = 0.1
     density_penalty = 100 * max(0, average_density - DENSITY_TARGET)
     
     metrics = {
@@ -99,7 +99,7 @@ def run_benchmark_and_collect_metrics(sparse_attention_config):
     from pathlib import Path
     from sparse_attention_hub.adapters import ModelAdapterHF
     from benchmark import LongBench
-    from benchmark.ruler import Ruler
+    from benchmark.ruler32k import Ruler32K
     from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
     
     # Model configuration
@@ -154,7 +154,7 @@ def run_benchmark_and_collect_metrics(sparse_attention_config):
     
     # Setup benchmarks (minimal subsets for quick signal)
     benchmarks = [
-        ("longbench", LongBench(["passage_retrieval_en"]))
+        ("ruler", Ruler32K(["niah_multikey_2"]))
     ]
 
     # Run each benchmark into its own subdirectory and collect micro-metrics
@@ -174,8 +174,8 @@ def run_benchmark_and_collect_metrics(sparse_attention_config):
             adapter,
             bench_dir,
             request_kwargs={
-                "max_requests": 2,
-                "max_context_length": 16000
+                "max_requests": 5,
+                "max_context_length": 40000
             }
         )
         bench_logger.flush()
@@ -185,10 +185,11 @@ def run_benchmark_and_collect_metrics(sparse_attention_config):
     if collected:
         avg_density = sum(m["density"] for m in collected) / len(collected)
         avg_error = sum(m["error"] for m in collected) / len(collected)
+        density_penalty = 100 * max(0, avg_density - DENSITY_TARGET)
         metrics = {
             "density": avg_density,
             "error": avg_error,
-            "combined_score": (avg_density + avg_error) / 2,
+            "combined_score": - (density_penalty + avg_error),
         }
     else:
         metrics = {"density": 0.0, "error": 0.0, "combined_score": 0.0}
@@ -228,8 +229,6 @@ def evaluate(program_path: str):
 
     # Use the original config class (which is picklable) but with the new masker class
     sparse_attention_config = ResearchAttentionConfig(masker_configs=[
-        LocalMaskerConfig(window_size=0.001),
-        SinkMaskerConfig(sink_size=0.001),
         EvolveMaskerConfig(),
     ])
  

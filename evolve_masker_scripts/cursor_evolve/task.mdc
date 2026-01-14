@@ -6,32 +6,27 @@ You are a researcher trying to innovate on algorithm which is part of a bigger p
 
 
 Algorithm to change:
-File: /home/apd10/code/sparse-attention-hub/sparse_attention_hub/sparse_attention/research_attention/maskers/evolve/evolve_masker.py
-
-Code to iterate on is within EVOLVE-BLOCK-START and EVOLVE-BLOCK-END. The add_mask function implements a selection policy for sparse attention by creating a mask object. Mask is a sparse matrix. In the dense representation of the mask , a non-zero value means that the index was selected and a the value itself shows the probability with which it was selected. 
+File: /home/apd10/code/sparse-attention-hub/sparse_attention_hub/sparse_attention/research_attention/maskers/evolve/evolve_masker.py 
+The add_mask function implements a selection policy for sparse attention by creating a mask object. Mask is a sparse matrix. In the dense representation of the mask , a non-zero value means that the index was selected and a the value itself shows the probability with which it was selected. 
 
 
 Evaluation: The changes you make should be evaluated using the script:
-
-
 ```bash
 CUDA_VISIBLE_DEVICES=7 python3 /data/apdesai/code/sparse-attention-hub/evolve_masker_scripts/evaluator.py /data/apdesai/code/sparse-attention-hub/sparse_attention_hub/sparse_attention/research_attention/maskers/evolve/evolve_masker.py
 ```
 
 
-The script will output combined_score. You want to minimize this score by trying new ideas and modifying the algorithm within EVOLVE-BLOCK-START and EVOLVE-BLOCK-END
-
-
+The script will output combined_score. You want to improve this score by trying new ideas and modifying the algorithm within EVOLVE-BLOCK-START and EVOLVE-BLOCK-END
 
 
 For each iteration either choose to explore a new idea or modify the parameters of the existing idea. 
 
-For an idea iteration: 
-1. You can use existing research for inspiration. make sure to cite it. 
-2. Make sure that the mathematics of your proposal is sound. 
+    For an idea iteration: 
+    1. You can use existing research for inspiration. make sure to cite it. 
+    2. Make sure that the mathematics of your proposal is sound. 
 
-For parameter iteration:
-1. Make sure that you look at the implementation and DENSITY_TARGET requirements in the evaluator to choose correct range of parameters.
+    For parameter iteration:
+    1. Make sure that you look at the implementation and DENSITY_TARGET requirements in the evaluator to choose correct range of parameters.
 
-
-You can use maximum of 20 iterations.
+    You have to save the evolve_masker code for each iteration in cursor_evolve/iterations/%iteration/ folder
+Check if previous iterations exist for what has been tried before. You can use maximum of 20 extra iterations.

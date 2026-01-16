@@ -24,8 +24,8 @@ import torch
 import sys
 
 # Change to directory two levels below current location
-os.chdir('/home/ubuntu/sparse-attention-hub')
-sys.path.insert(0, '/home/ubuntu/sparse-attention-hub')
+os.chdir('/scratch/sj157/sparse-attention-hub')
+sys.path.insert(0, '/scratch/sj157/sparse-attention-hub')
 
 from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
@@ -38,31 +38,17 @@ from benchmark.ruler32k import Ruler32K
 from sparse_attention_hub.adapters import ModelAdapterHF
 
 def main():
-    model_name = "meta-llama/Llama-3.1-8B-Instruct"
-    device = 0
+    # model_name = "mistralai/Ministral-3-8B-Instruct-2512"
+    model_name = "Qwen/Qwen3-Next-80B-A3B-Instruct"
 
-    # sorted_channel_file is available in the author's repository
-    # https://github.com/andy-yang-1/DoubleSparse/tree/main/config
-    # TODO: is there a better way to use the paths in scripts?
     sparse_attention_config = ResearchAttentionConfig(masker_configs=[
-        DoubleSparsityTopKMaskerConfig(
-            heavy_size=4096,
-            group_factor=2,
-            label_bits=2,
-            sorted_channel_file="/home/ubuntu/DoubleSparse/config/meta-llama/Llama-3.1-8B-Instruct.json",
-            channel_selection="q_proj"
-        )
     ])
     
     print("  ✓ Loading model...")
-     # use whichever is available
-     # flash_attention_3 is for Hopper GPU
-     # commonly flash_attention_2 is supported on other GPUs
     adapter = ModelAdapterHF(
         model_name=model_name,
-        sparse_attention_config=sparse_attention_config,
-        model_kwargs= {"torch_dtype": torch.bfloat16, "attn_implementation": "flash_attention_3"},
-        device=device
+        sparse_attention_config=None,
+        model_kwargs= {"torch_dtype": torch.bfloat16, "device_map": "auto"},
     )
     
     #benchmark = LongBench(['passage_retrieval_en'])
@@ -79,7 +65,7 @@ def main():
             ],
         )
     metric_logger.flush()
-    benchmark.run_benchmark(adapter, result_dir, request_kwargs={"max_requests": 10, "max_context_length": 1000000}, generation_kwargs={"max_new_tokens": 500})
+    benchmark.run_benchmark(adapter, result_dir, request_kwargs={"max_requests": 50, "max_context_length": 32000}, generation_kwargs={"max_new_tokens": 32})
     
 if __name__ == "__main__":
     main() 

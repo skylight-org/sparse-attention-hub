@@ -18,3 +18,6 @@ mypy>=0.991
 wandb>=0.13.0
 tqdm>=4.64.0
 pandas>=1.5.0
+flask
+requests
+accelerate

@@ -1,0 +1,61 @@
+Instructions to run openhands for swebench:
+- git clone https://github.com/OpenHands/benchmarks/tree/main/benchmarks/swebench
+- create a test_instances.txt file with specific swebench instances you would like to run. Example:
+django__django-12155
+django__django-12193
+django__django-12209
+django__django-12262
+django__django-12273
+django__django-12276
+django__django-12304
+pallets__flask-5014
+scikit-learn__scikit-learn-10297
+scikit-learn__scikit-learn-10844
+scikit-learn__scikit-learn-10908
+scikit-learn__scikit-learn-11310
+scikit-learn__scikit-learn-11578
+pytest-dev__pytest-10051
+pytest-dev__pytest-10081
+pytest-dev__pytest-10356
+pytest-dev__pytest-5262
+pytest-dev__pytest-5631
+pytest-dev__pytest-5787
+pytest-dev__pytest-5809
+
+
+- Create a file called local_llm_config.json. In the example below, we use 
+(and recommend) Qwen's suggested parameters for the 30b coding model
+
+
+{
+  "model": "openai/Qwen/Qwen3-Coder-30B-A3B-Instruct",
+  "base_url": "http://172.17.0.1:4001/v1",
+  "api_key": "not-needed",
+  "temperature": 0.7,
+  "top_p": 0.8,
+  "top_k": 20,
+  "max_output_tokens": 65536,
+  "litellm_extra_body": {
+    "repetition_penalty": 1.05
+  }
+}
+
+- Run instructions:
+in one terminal, run (with CUDA_VISIBLE_DEVICES flag if you want to run on multiple devices)
+CUDA_VISIBLE_DEVICES=1 python scripts/start_server.py Qwen/Qwen3-Coder-30B-A3B-Instruct dense 4001
+generally, run with format [python scripts/start_server.py] + [MODEL NAME] + [dense/sparse config] + [port]
+
+in another terminal, run 
+uv run swebench-infer local_llm_config.json     --dataset princeton-nlp/SWE-bench_Verified     --split test     --max-iterations 100     --workspace docker     --select test_instances.txt     --note recent_run 
+
+- Before running, you MUST build the images using:
+uv run python -m benchmarks.swebench.build_images \
+  --dataset princeton-nlp/SWE-bench_Verified \
+  --split test \
+  --image ghcr.io/openhands/eval-agent-server \
+  --target source-minimal
+
+
+
+Instructions are also in the openhands repo README.md
+

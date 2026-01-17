@@ -13,13 +13,13 @@ from ..utils.exceptions import (
     TokenizerCreationError,
 )
 from ..utils.gpu_utils import cleanup_gpu_memory
+from .base import ModelServer
 from .model_registry import (
     ModelRegistryError,
     RegistryEntry,
     load_model_registry,
     resolve_model_class,
 )
-from .base import ModelServer
 
 
 class ModelServerHF(ModelServer):

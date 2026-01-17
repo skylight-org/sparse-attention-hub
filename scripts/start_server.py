@@ -27,11 +27,100 @@ if str(project_root) not in sys.path:
 
 try:
     from sparse_attention_hub.adapters import ModelAdapterHF
-    from benchmark.raytune.config_builders.utility import deserialize_sparse_config
+    from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
+    from benchmark.raytune.config_builders.utility import (
+        deserialize_sparse_config,
+        get_all_masker_config_classes,
+    )
 except ImportError as e:
     print(f"Error: Could not import required modules. {e}")
     print("Ensure you are running from the project root and have all dependencies installed.")
     sys.exit(1)
+
+
+def flexible_deserialize_sparse_config(data: Optional[Dict[str, Any]]) -> Optional[Any]:
+    """Reconstruct ResearchAttentionConfig from JSON data with flexible format support.
+
+    Handles both the RayTune format (type/params) and a flatter format (name/flattened params).
+
+    Args:
+        data: Dictionary representation of the config
+
+    Returns:
+        ResearchAttentionConfig instance, or None if data is None or invalid
+    """
+    if data is None:
+        return None
+
+    # Try standard RayTune deserialization first
+    config = deserialize_sparse_config(data)
+    if config is not None:
+        return config
+
+    # Fallback to flexible format
+    # Expect either 'type': 'ResearchAttentionConfig' or just 'masker_configs'
+    if (
+        data.get("type") != "ResearchAttentionConfig"
+        and data.get("name") != "ResearchAttentionConfig"
+        and "masker_configs" not in data
+    ):
+        # Check if it's the specific OracleTopK style named config
+        if data.get("name") != "OracleTopK" and "masker_configs" not in data:
+            return None
+
+    # Dynamically discover all available masker config classes
+    config_map = get_all_masker_config_classes()
+
+    # Reconstruct masker configs
+    masker_configs = []
+    for masker_data in data.get("masker_configs", []):
+        # Try 'type' then 'name'
+        type_name = masker_data.get("type") or masker_data.get("name")
+        if not type_name:
+            continue
+
+        config_class = config_map.get(type_name)
+        if config_class:
+            try:
+                # Use 'params' if it exists, otherwise use all other keys as params
+                if "params" in masker_data:
+                    params = masker_data["params"]
+                else:
+                    # Filter out metadata keys
+                    params = {
+                        k: v
+                        for k, v in masker_data.items()
+                        if k not in ["type", "name"]
+                    }
+                masker_configs.append(config_class(**params))
+            except Exception as e:
+                print(f"Warning: Failed to create {type_name}: {e}")
+                continue
+
+    if not masker_configs:
+        return None
+
+    return ResearchAttentionConfig(masker_configs=masker_configs)
+
+
+# Predefined configurations that can be used by name instead of a file path
+PREDEFINED_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "oracle_50": {
+        "name": "OracleTopK",
+        "masker_configs": [
+            {"name": "SinkMaskerConfig", "sink_size": 128},
+            {"name": "LocalMaskerConfig", "window_size": 128},
+            {"name": "OracleTopKMaskerConfig", "heavy_size": 0.5},
+        ],
+    },
+    "streaming_llm": {
+        "name": "ResearchAttentionConfig",
+        "masker_configs": [
+            {"name": "SinkMaskerConfig", "sink_size": 4},
+            {"name": "LocalMaskerConfig", "window_size": 64},
+        ],
+    },
+}
 
 app = FastAPI(title="Sparse Attention Model Server")
 model_adapter: Optional[ModelAdapterHF] = None
@@ -355,19 +444,41 @@ def main():
     # Load sparse attention configuration
     sparse_config = None
     if args.config.lower() != "dense":
-        if not os.path.exists(args.config):
-            print(f"Error: Config file not found: {args.config}")
-            sys.exit(1)
-            
-        with open(args.config, 'r') as f:
+        config_data = None
+
+        # 1. Check if it's a predefined config name
+        if args.config.lower() in PREDEFINED_CONFIGS:
+            print(f"Using predefined sparse config: {args.config.lower()}")
+            config_data = PREDEFINED_CONFIGS[args.config.lower()]
+        # 2. Check if it's a JSON string
+        elif args.config.strip().startswith("{") and args.config.strip().endswith("}"):
             try:
-                config_data = json.load(f)
-                sparse_config = deserialize_sparse_config(config_data)
-                if sparse_config is None:
-                    print(f"Warning: Could not deserialize sparse config from {args.config}. Falling back to DENSE.")
-            except json.JSONDecodeError:
-                print(f"Error: {args.config} is not a valid JSON file.")
+                config_data = json.loads(args.config)
+                print("Using sparse config from JSON string.")
+            except json.JSONDecodeError as e:
+                print(f"Error: Invalid JSON string provided for config: {e}")
                 sys.exit(1)
+        # 3. Check if it's a file path
+        elif os.path.exists(args.config):
+            with open(args.config, "r") as f:
+                try:
+                    config_data = json.load(f)
+                    print(f"Using sparse config from file: {args.config}")
+                except json.JSONDecodeError:
+                    print(f"Error: {args.config} is not a valid JSON file.")
+                    sys.exit(1)
+        else:
+            print(
+                f"Error: Config not found. Must be 'dense', a predefined name ({', '.join(PREDEFINED_CONFIGS.keys())}), a JSON string, or a valid file path."
+            )
+            sys.exit(1)
+
+        if config_data:
+            sparse_config = flexible_deserialize_sparse_config(config_data)
+            if sparse_config is None:
+                print(
+                    f"Warning: Could not deserialize sparse config from {args.config}. Falling back to DENSE."
+                )
     else:
         print("Running in DENSE mode.")
     

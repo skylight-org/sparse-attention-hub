@@ -13,7 +13,12 @@ from ..utils.exceptions import (
     TokenizerCreationError,
 )
 from ..utils.gpu_utils import cleanup_gpu_memory
-from ..utils.model_registry import ModelRegistryError, load_model_registry, resolve_model_class
+from .model_registry import (
+    ModelRegistryError,
+    RegistryEntry,
+    load_model_registry,
+    resolve_model_class,
+)
 from .base import ModelServer
 
 
@@ -33,15 +38,18 @@ class ModelServerHF(ModelServer):
         super().__init__(config)
 
         # Cache registry to avoid reading/parsing YAML repeatedly.
-        self._model_registry: Optional[Dict[str, Any]] = None
+        self._model_registry: Optional[Dict[str, RegistryEntry]] = None
         self._model_registry_path: Optional[str] = None
 
-    def _get_model_registry(self) -> Dict[str, Any]:
+    def _get_model_registry(self) -> Dict[str, RegistryEntry]:
         registry_path = getattr(self.config, "model_registry_path", None)
         if not registry_path:
             return {}
 
-        if self._model_registry is not None and self._model_registry_path == registry_path:
+        if (
+            self._model_registry is not None
+            and self._model_registry_path == registry_path
+        ):
             return self._model_registry
 
         self._model_registry_path = registry_path
@@ -74,30 +82,51 @@ class ModelServerHF(ModelServer):
             model_cls = AutoModelForCausalLM
 
             # Optional registry support (no-op unless configured)
-            registry = self._get_model_registry()
-            if registry:
+            registry_path = getattr(self.config, "model_registry_path", None)
+            if registry_path:
+                registry = self._get_model_registry()
                 entry = registry.get(model_name)
 
                 if entry is None:
+                    self.logger.warning(
+                        f"Model '{model_name}' is not registered in the model registry at "
+                        f"{self._model_registry_path}. Proceeding only if allow_unregistered_models=True."
+                    )
                     if not getattr(self.config, "allow_unregistered_models", True):
                         raise ModelRegistryError(
                             f"Model '{model_name}' is not registered and allow_unregistered_models=False"
                         )
                 else:
-                    if getattr(self.config, "require_verified_models", False) and not entry.verified:
-                        raise ModelRegistryError(
-                            f"Model '{model_name}' is not verified in the registry"
-                        )
-
-                    # Merge defaults (call-site kwargs win)
-                    for k, v in entry.default_model_kwargs.items():
-                        effective_kwargs.setdefault(k, v)
+                    # Start with registry defaults, then override with call-site kwargs
+                    effective_kwargs = dict(entry.default_model_kwargs)
+                    effective_kwargs.update(model_kwargs or {})
 
                     resolved = resolve_model_class(entry.model_class)
                     if resolved is not None:
                         model_cls = resolved
 
-            model = model_cls.from_pretrained(model_name, **effective_kwargs)
+            try:
+                model = model_cls.from_pretrained(model_name, **effective_kwargs)
+            except ValueError as e:
+                # Transformers may reject flex_attention for some architectures (e.g. Qwen3-Next).
+                # If the caller requested flex_attention, fall back to eager so the model can load.
+                requested_attn_impl = effective_kwargs.get(
+                    "attn_implementation"
+                ) or effective_kwargs.get("attention_implementation")
+                message = str(e)
+                if (
+                    requested_attn_impl in {"flex_attention", "flex"}
+                    and "flex_attention" in message
+                    and "does not support" in message
+                ):
+                    self.logger.warning(
+                        f"Model {model_name} does not support flex_attention; falling back to attn_implementation='eager'."
+                    )
+                    effective_kwargs.pop("attention_implementation", None)
+                    effective_kwargs["attn_implementation"] = "eager"
+                    model = model_cls.from_pretrained(model_name, **effective_kwargs)
+                else:
+                    raise
 
             # Handle device placement
             # If device_map is set, placement may be handled by accelerate/sharding.

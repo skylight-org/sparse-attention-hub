@@ -3,7 +3,6 @@
 #
 # models:
 #   <model_id>:
-#     verified: <bool>
 #     model_class: <TransformersClassName or dotted.path.Class>
 #     default_model_kwargs:
 #       <key>: <value>
@@ -14,7 +13,6 @@
 
 models:
   mistralai/Ministral-3-8B-Instruct-2512:
-    verified: false
     model_class: Mistral3ForConditionalGeneration
     default_model_kwargs:
       device_map: auto

@@ -1,28 +1,3 @@
-"""Model registry utilities.
-
-This is intentionally opt-in: nothing will load/parse YAML unless
-`ModelServerConfig.model_registry_path` is set.
-
-The registry can:
-- mark models as verified
-- specify an explicit Transformers model class to use (vs AutoModelForCausalLM)
-- supply default kwargs for `from_pretrained`
-- construct config objects (e.g. quantization_config) from a constructor spec
-
-Example YAML:
-
-models:
-  mistralai/Ministral-3-8B-Instruct-2512:
-    verified: true
-    model_class: Mistral3ForConditionalGeneration
-    default_model_kwargs:
-      device_map: auto
-      quantization_config:
-        constructor: FineGrainedFP8Config
-        kwargs:
-          dequantize: true
-"""
-
 from __future__ import annotations
 
 import importlib
@@ -38,14 +13,12 @@ class ModelRegistryError(RuntimeError):
 @dataclass(frozen=True)
 class RegistryEntry:
     model_id: str
-    verified: bool
     model_class: Optional[str]
     default_model_kwargs: Dict[str, Any]
 
 
 def _import_symbol(symbol: str) -> Any:
     """Import a symbol by dotted path, or from transformers if not dotted."""
-
     if "." in symbol:
         module_path, _, attr = symbol.rpartition(".")
         module = importlib.import_module(module_path)
@@ -61,10 +34,7 @@ def _maybe_construct(value: Any) -> Any:
     Supported forms:
       - {"constructor": "FineGrainedFP8Config", "kwargs": {...}}
       - {"type": "FineGrainedFP8Config", "args": {...}} (alias)
-
-    Anything else is returned unchanged.
     """
-
     if not isinstance(value, Mapping):
         return value
 
@@ -84,7 +54,6 @@ def _maybe_construct(value: Any) -> Any:
 
 def load_model_registry(path: str) -> Dict[str, RegistryEntry]:
     """Load a YAML model registry file."""
-
     if not path:
         return {}
 
@@ -129,7 +98,6 @@ def load_model_registry(path: str) -> Dict[str, RegistryEntry]:
 
         registry[str(model_id)] = RegistryEntry(
             model_id=str(model_id),
-            verified=bool(raw.get("verified", False)),
             model_class=(str(raw["model_class"]) if raw.get("model_class") else None),
             default_model_kwargs=normalized_kwargs,
         )
@@ -139,11 +107,11 @@ def load_model_registry(path: str) -> Dict[str, RegistryEntry]:
 
 def resolve_model_class(model_class: Optional[str]) -> Optional[Any]:
     """Resolve a Transformers model class by name/path."""
-
     if model_class is None:
         return None
-
     try:
         return _import_symbol(model_class)
     except Exception as e:
-        raise ModelRegistryError(f"Failed to resolve model_class {model_class}: {e}") from e
+        raise ModelRegistryError(
+            f"Failed to resolve model_class {model_class}: {e}"
+        ) from e

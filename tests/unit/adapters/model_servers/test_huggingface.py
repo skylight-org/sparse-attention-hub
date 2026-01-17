@@ -1,6 +1,5 @@
 """Unit tests for the HuggingFace ModelServer implementation."""
 
-from dataclasses import dataclass
 from unittest.mock import Mock, patch
 
 import pytest

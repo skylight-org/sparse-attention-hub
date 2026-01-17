@@ -120,7 +120,7 @@ class ModelServerHF(ModelServer):
                     and "does not support" in message
                 ):
                     self.logger.warning(
-                        f"Model {model_name} does not support flex_attention; falling back to attn_implementation='eager'."
+                        f"Model {model_name} does not support flex_attention. Falling back to attn_implementation='eager'."
                     )
                     effective_kwargs.pop("attention_implementation", None)
                     effective_kwargs["attn_implementation"] = "eager"
@@ -132,7 +132,7 @@ class ModelServerHF(ModelServer):
             # If device_map is set, placement may be handled by accelerate/sharding.
             if effective_kwargs.get("device_map") is not None:
                 self.logger.debug(
-                    f"device_map is set for {model_name}; skipping explicit .to(device) placement"
+                    f"device_map is set for {model_name}. Skipping explicit .to(device) placement"
                 )
             elif gpu_id is not None:
                 if torch.cuda.is_available():

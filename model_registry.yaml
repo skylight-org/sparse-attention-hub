@@ -1,0 +1,24 @@
+# This file is only used if you set:
+#   ModelServerConfig(model_registry_path="/path/to/model_registry.yaml")
+#
+# models:
+#   <model_id>:
+#     verified: <bool>
+#     model_class: <TransformersClassName or dotted.path.Class>
+#     default_model_kwargs:
+#       <key>: <value>
+#       quantization_config:
+#         constructor: <ConfigClassName or dotted.path.Class>
+#         kwargs:
+#           <kw>: <value>
+
+models:
+  mistralai/Ministral-3-8B-Instruct-2512:
+    verified: false
+    model_class: Mistral3ForConditionalGeneration
+    default_model_kwargs:
+      device_map: auto
+      quantization_config:
+        constructor: FineGrainedFP8Config
+        kwargs:
+          dequantize: true

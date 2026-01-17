@@ -13,6 +13,7 @@ from ..utils.exceptions import (
     TokenizerCreationError,
 )
 from ..utils.gpu_utils import cleanup_gpu_memory
+from ..utils.model_registry import ModelRegistryError, load_model_registry, resolve_model_class
 from .base import ModelServer
 
 
@@ -30,6 +31,22 @@ class ModelServerHF(ModelServer):
             config: Configuration for ModelServer behavior
         """
         super().__init__(config)
+
+        # Cache registry to avoid reading/parsing YAML repeatedly.
+        self._model_registry: Optional[Dict[str, Any]] = None
+        self._model_registry_path: Optional[str] = None
+
+    def _get_model_registry(self) -> Dict[str, Any]:
+        registry_path = getattr(self.config, "model_registry_path", None)
+        if not registry_path:
+            return {}
+
+        if self._model_registry is not None and self._model_registry_path == registry_path:
+            return self._model_registry
+
+        self._model_registry_path = registry_path
+        self._model_registry = load_model_registry(registry_path)
+        return self._model_registry
 
     def _create_model(
         self, model_name: str, gpu_id: Optional[int], model_kwargs: Dict[str, Any]
@@ -53,12 +70,44 @@ class ModelServerHF(ModelServer):
                 f"Loading HuggingFace model: {model_name} with kwargs: {model_kwargs}"
             )
 
-            model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+            effective_kwargs = dict(model_kwargs or {})
+            model_cls = AutoModelForCausalLM
+
+            # Optional registry support (no-op unless configured)
+            registry = self._get_model_registry()
+            if registry:
+                entry = registry.get(model_name)
+
+                if entry is None:
+                    if not getattr(self.config, "allow_unregistered_models", True):
+                        raise ModelRegistryError(
+                            f"Model '{model_name}' is not registered and allow_unregistered_models=False"
+                        )
+                else:
+                    if getattr(self.config, "require_verified_models", False) and not entry.verified:
+                        raise ModelRegistryError(
+                            f"Model '{model_name}' is not verified in the registry"
+                        )
+
+                    # Merge defaults (call-site kwargs win)
+                    for k, v in entry.default_model_kwargs.items():
+                        effective_kwargs.setdefault(k, v)
+
+                    resolved = resolve_model_class(entry.model_class)
+                    if resolved is not None:
+                        model_cls = resolved
+
+            model = model_cls.from_pretrained(model_name, **effective_kwargs)
 
             # Handle device placement
-            if gpu_id is not None:
+            # If device_map is set, placement may be handled by accelerate/sharding.
+            if effective_kwargs.get("device_map") is not None:
+                self.logger.debug(
+                    f"device_map is set for {model_name}; skipping explicit .to(device) placement"
+                )
+            elif gpu_id is not None:
                 if torch.cuda.is_available():
-                    if type(gpu_id) == str and gpu_id.startswith("cuda"):
+                    if isinstance(gpu_id, str) and gpu_id.startswith("cuda"):
                         device = gpu_id
                     else:
                         device = "cuda:" + f"{gpu_id}"

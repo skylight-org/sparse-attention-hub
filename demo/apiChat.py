@@ -4,6 +4,7 @@ Simple API-based Chat Client for Sparse Attention Models.
 Connects to the start_server.py OpenAI-compatible endpoint.
 """
 
+import argparse
 import sys
 import json
 import requests
@@ -26,7 +27,11 @@ def get_multiline_input(label):
     return "\n".join(lines)
 
 def main():
-    url = "http://127.0.0.1:4000/v1/chat/completions"
+    parser = argparse.ArgumentParser(description="API Chat Client for Sparse Attention Models")
+    parser.add_argument("--port", type=int, default=4000, help="Port number for the API server (default: 4000)")
+    args = parser.parse_args()
+    
+    url = f"http://127.0.0.1:{args.port}/v1/chat/completions"
     print(f"--- API Chat Client ---")
     print(f"Connecting to: {url}")
     

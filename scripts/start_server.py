@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import types
 from pathlib import Path
 import torch
 from flask import Flask, jsonify, request
@@ -78,6 +79,13 @@ def main():
 
     model_dev = next(adapter.model.parameters()).device
     adapter.device = model_dev
+    
+    # Patch _validate_model_kwargs to an empty function
+    def _empty_validate_model_kwargs(self, model_kwargs: dict) -> None:
+        """Empty function to bypass model kwargs validation."""
+        pass
+    adapter.model._validate_model_kwargs = types.MethodType(_empty_validate_model_kwargs, adapter.model)
+    
     _orig_forward = adapter.model.forward
     def _wrapped_forward(*args, **kwargs):
         new_args = tuple(a.to(model_dev) if isinstance(a, torch.Tensor) else a for a in args)

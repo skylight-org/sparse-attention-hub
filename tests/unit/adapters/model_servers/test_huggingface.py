@@ -86,7 +86,7 @@ class TestModelCreation:
         mock_auto_model.from_pretrained.assert_called_once_with(
             "gpt2", torch_dtype=torch.float16
         )
-        mock_model.to.assert_called_once_with("cuda:0")
+        mock_model.to.assert_called_once_with(torch.device("cuda:0"))
         assert model == mock_model
 
     @patch(
@@ -107,7 +107,7 @@ class TestModelCreation:
         mock_auto_model.from_pretrained.assert_called_once_with(
             "bert-base", torch_dtype=torch.float32
         )
-        mock_model.to.assert_called_once_with("cpu")
+        mock_model.to.assert_called_once_with(torch.device("cpu"))
         assert model == mock_model
 
     @patch(
@@ -129,7 +129,7 @@ class TestModelCreation:
         model = self.server._create_model("gpt2", 0, kwargs)  # Request GPU 0
 
         # Should place on CPU instead
-        mock_model.to.assert_called_once_with("cpu")
+        mock_model.to.assert_called_once_with(torch.device("cpu"))
         assert model == mock_model
 
     @patch(
@@ -164,7 +164,7 @@ class TestModelCreation:
 
         # Should still work
         mock_auto_model.from_pretrained.assert_called_once_with("gpt2")
-        mock_model.to.assert_called_once_with("cpu")
+        mock_model.to.assert_called_once_with(torch.device("cpu"))
 
     @patch(
         "sparse_attention_hub.adapters.model_servers.huggingface.AutoModelForCausalLM"
@@ -300,7 +300,7 @@ class TestModelDeletion:
         self.server._delete_model(mock_model, 0)
 
         # Verify calls
-        mock_model.to.assert_called_once_with("cpu")  # Move to CPU first
+        mock_model.to.assert_called_once_with(torch.device("cpu"))  # Move to CPU first
         mock_gc_collect.assert_called_once()
         mock_cleanup_gpu.assert_called_once_with(0)
 

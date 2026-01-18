@@ -5,7 +5,7 @@ import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 
 from ..utils.config import ModelServerConfig
 from ..utils.exceptions import (
@@ -68,9 +68,10 @@ class ModelServer(ABC):
     ModelServerHF or ModelServerVLLM. We can only have one of them.
     """
 
-    _cls = None
+    _cls: Optional[Type["ModelServer"]] = None
     _instance: Optional["ModelServer"] = None
     _lock = threading.Lock()
+    _initialized: bool = False  # Type annotation for instance attribute
 
     def __new__(cls, config: Optional[ModelServerConfig] = None) -> "ModelServer":
         """Singleton pattern implementation with thread safety."""
@@ -85,7 +86,8 @@ class ModelServer(ABC):
                     raise ValueError(
                         "Trying to create ModelServer with different concrete class when instance already exists"
                     )
-                if config and ModelServer._instance.config != config:
+                instance = ModelServer._instance
+                if config and hasattr(instance, "config") and instance.config != config:
                     raise ValueError(
                         "Trying to create ModelServer with different config when instance already exists"
                     )
@@ -605,7 +607,7 @@ class ModelServer(ABC):
                 "tokenizer_keys": list(self._tokenizers.keys()),
             }
 
-    def cleanup_unused(self) -> Dict[str, int]:
+    def cleanup_unused(self) -> Dict[str, Dict[str, int]]:
         """Clean up models and tokenizers with zero references.
 
         Returns:
@@ -635,10 +637,10 @@ class ModelServer(ABC):
                 if key not in self._tokenizers:
                     continue
 
-                entry = self._tokenizers[key]
+                tokenizer_entry: TokenizerEntry = self._tokenizers[key]
 
-                if entry.reference_count == 0:
-                    self._delete_tokenizer_entry(key, entry)
+                if tokenizer_entry.reference_count == 0:
+                    self._delete_tokenizer_entry(key, tokenizer_entry)
                     tokenizer_stats["deleted"] += 1
                 else:
                     tokenizer_stats["skipped"] += 1

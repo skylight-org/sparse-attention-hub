@@ -3,7 +3,7 @@
 OpenAI-compatible server for sparse attention models.
 
 Usage:
-    python scripts/start_server.py model_name config_path [and] port
+    python scripts/start_server.py model_name [and] port
 """
 
 import argparse
@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+import types
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Tuple
@@ -27,100 +28,39 @@ if str(project_root) not in sys.path:
 
 try:
     from sparse_attention_hub.adapters import ModelAdapterHF
-    from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
-    from benchmark.raytune.config_builders.utility import (
-        deserialize_sparse_config,
-        get_all_masker_config_classes,
+    from sparse_attention_hub.sparse_attention.research_attention import (
+        ResearchAttentionConfig,
+    )
+    from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import (
+        LocalMaskerConfig,
+        OracleTopKConfig,
+        SinkMaskerConfig,
     )
 except ImportError as e:
     print(f"Error: Could not import required modules. {e}")
-    print("Ensure you are running from the project root and have all dependencies installed.")
+    print(
+        "Ensure you are running from the project root and have all dependencies installed."
+    )
     sys.exit(1)
 
+# ==============================================================================
+# CONFIGURATION AREA
+# Modify this section to change the model's attention behavior.
+# ==============================================================================
 
-def flexible_deserialize_sparse_config(data: Optional[Dict[str, Any]]) -> Optional[Any]:
-    """Reconstruct ResearchAttentionConfig from JSON data with flexible format support.
+# Option 1: Standard Dense Attention
+# SPARSE_CONFIG = None
 
-    Handles both the RayTune format (type/params) and a flatter format (name/flattened params).
+# Option 2: Sparse Attention (e.g., Oracle Top-K)
+SPARSE_CONFIG: Optional[ResearchAttentionConfig] = ResearchAttentionConfig(
+    masker_configs=[
+        SinkMaskerConfig(sink_size=128),
+        LocalMaskerConfig(window_size=128),
+        OracleTopKConfig(heavy_size=0.5),
+    ]
+)
 
-    Args:
-        data: Dictionary representation of the config
-
-    Returns:
-        ResearchAttentionConfig instance, or None if data is None or invalid
-    """
-    if data is None:
-        return None
-
-    # Try standard RayTune deserialization first
-    config = deserialize_sparse_config(data)
-    if config is not None:
-        return config
-
-    # Fallback to flexible format
-    # Expect either 'type': 'ResearchAttentionConfig' or just 'masker_configs'
-    if (
-        data.get("type") != "ResearchAttentionConfig"
-        and data.get("name") != "ResearchAttentionConfig"
-        and "masker_configs" not in data
-    ):
-        # Check if it's the specific OracleTopK style named config
-        if data.get("name") != "OracleTopK" and "masker_configs" not in data:
-            return None
-
-    # Dynamically discover all available masker config classes
-    config_map = get_all_masker_config_classes()
-
-    # Reconstruct masker configs
-    masker_configs = []
-    for masker_data in data.get("masker_configs", []):
-        # Try 'type' then 'name'
-        type_name = masker_data.get("type") or masker_data.get("name")
-        if not type_name:
-            continue
-
-        config_class = config_map.get(type_name)
-        if config_class:
-            try:
-                # Use 'params' if it exists, otherwise use all other keys as params
-                if "params" in masker_data:
-                    params = masker_data["params"]
-                else:
-                    # Filter out metadata keys
-                    params = {
-                        k: v
-                        for k, v in masker_data.items()
-                        if k not in ["type", "name"]
-                    }
-                masker_configs.append(config_class(**params))
-            except Exception as e:
-                print(f"Warning: Failed to create {type_name}: {e}")
-                continue
-
-    if not masker_configs:
-        return None
-
-    return ResearchAttentionConfig(masker_configs=masker_configs)
-
-
-# Predefined configurations that can be used by name instead of a file path
-PREDEFINED_CONFIGS: Dict[str, Dict[str, Any]] = {
-    "oracle_50": {
-        "name": "OracleTopK",
-        "masker_configs": [
-            {"name": "SinkMaskerConfig", "sink_size": 128},
-            {"name": "LocalMaskerConfig", "window_size": 128},
-            {"name": "OracleTopKMaskerConfig", "heavy_size": 0.5},
-        ],
-    },
-    "streaming_llm": {
-        "name": "ResearchAttentionConfig",
-        "masker_configs": [
-            {"name": "SinkMaskerConfig", "sink_size": 4},
-            {"name": "LocalMaskerConfig", "window_size": 64},
-        ],
-    },
-}
+# ==============================================================================
 
 app = FastAPI(title="Sparse Attention Model Server")
 model_adapter: Optional[ModelAdapterHF] = None
@@ -332,7 +272,7 @@ async def chat_completions(request: ChatCompletionRequest):
                 outputs = model_adapter.model.generate(
                     **inputs,
                     **gen_kwargs,
-                    sparse_meta_data=sparse_meta_data,
+                    sparse_meta_data=sparse_meta_data
                 )
         else:
             # Standard dense execution
@@ -420,68 +360,38 @@ async def list_models():
     }
 
 def main():
-    parser = argparse.ArgumentParser(description="Start OpenAI-compatible sparse attention server")
-    parser.add_argument("--device", type=str, default=None, help="Device to run the model on (e.g. 'cuda:0')")
+    parser = argparse.ArgumentParser(
+        description="Start OpenAI-compatible sparse attention server"
+    )
+    parser.add_argument(
+        "--device", type=str, default=None, help="Device to run the model on (e.g. 'cuda:0')"
+    )
     parser.add_argument("model", type=str, help="HuggingFace model name")
-    parser.add_argument("config", type=str, help="Path to sparse attention config JSON (or 'dense')")
     parser.add_argument("remaining", nargs="*", help="Port (optionally preceded by 'and')")
-    
+
     args = parser.parse_args()
-    
+
     # Parse port from remaining arguments
     if not args.remaining:
         print("Error: Port number is required.")
         sys.exit(1)
-    
+
     try:
         port = int(args.remaining[-1])
     except ValueError:
         print(f"Error: Invalid port number '{args.remaining[-1]}'.")
         sys.exit(1)
-    
+
     global model_adapter
-    
-    # Load sparse attention configuration
-    sparse_config = None
-    if args.config.lower() != "dense":
-        config_data = None
 
-        # 1. Check if it's a predefined config name
-        if args.config.lower() in PREDEFINED_CONFIGS:
-            print(f"Using predefined sparse config: {args.config.lower()}")
-            config_data = PREDEFINED_CONFIGS[args.config.lower()]
-        # 2. Check if it's a JSON string
-        elif args.config.strip().startswith("{") and args.config.strip().endswith("}"):
-            try:
-                config_data = json.loads(args.config)
-                print("Using sparse config from JSON string.")
-            except json.JSONDecodeError as e:
-                print(f"Error: Invalid JSON string provided for config: {e}")
-                sys.exit(1)
-        # 3. Check if it's a file path
-        elif os.path.exists(args.config):
-            with open(args.config, "r") as f:
-                try:
-                    config_data = json.load(f)
-                    print(f"Using sparse config from file: {args.config}")
-                except json.JSONDecodeError:
-                    print(f"Error: {args.config} is not a valid JSON file.")
-                    sys.exit(1)
-        else:
-            print(
-                f"Error: Config not found. Must be 'dense', a predefined name ({', '.join(PREDEFINED_CONFIGS.keys())}), a JSON string, or a valid file path."
-            )
-            sys.exit(1)
+    # Use the configuration defined at the top of the file
+    sparse_config = SPARSE_CONFIG
 
-        if config_data:
-            sparse_config = flexible_deserialize_sparse_config(config_data)
-            if sparse_config is None:
-                print(
-                    f"Warning: Could not deserialize sparse config from {args.config}. Falling back to DENSE."
-                )
+    if sparse_config:
+        print(f"Running in SPARSE mode with config: {sparse_config}")
     else:
         print("Running in DENSE mode.")
-    
+
     print(f"Loading model: {args.model}...")
     
     # Device and dtype setup
@@ -502,6 +412,33 @@ def main():
             },
             device=device
         )
+        
+        # Patch _validate_model_kwargs to an empty function
+        # This allows passing sparse_meta_data as a kwarg to generate()
+        def _empty_validate_model_kwargs(self, model_kwargs: dict) -> None:
+            """Empty function to bypass model kwargs validation."""
+            pass
+
+        model_adapter.model._validate_model_kwargs = types.MethodType(
+            _empty_validate_model_kwargs, model_adapter.model
+        )
+
+        # Device-aware forward wrapper for additional safety
+        _orig_forward = model_adapter.model.forward
+        model_dev = next(model_adapter.model.parameters()).device
+
+        def _wrapped_forward(*args, **kwargs):
+            new_args = tuple(
+                a.to(model_dev) if isinstance(a, torch.Tensor) else a for a in args
+            )
+            new_kwargs = {
+                k: v.to(model_dev) if isinstance(v, torch.Tensor) else v
+                for k, v in kwargs.items()
+            }
+            return _orig_forward(*new_args, **new_kwargs)
+
+        model_adapter.model.forward = _wrapped_forward
+        print("Successfully patched model forward and validation for sparse metadata handling.")
         print("Model loaded successfully.")
     except Exception as e:
         print(f"Error loading model: {e}")

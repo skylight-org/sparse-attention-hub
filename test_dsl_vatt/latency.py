@@ -5,6 +5,8 @@ import importlib.util
 import os
 import sys
 import time
+from pathlib import Path
+from types import ModuleType
 from typing import Callable, Tuple
 
 import torch
@@ -34,7 +36,18 @@ def generate_random_inputs(
     start_offset: int,
     end_offset: int,
     device: str = "cpu",
-) -> Tuple[torch.Tensor, torch.Tensor, int, int, float, float, float, int, int]:
+) -> Tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    int,
+    int,
+    float,
+    float,
+    float,
+    int,
+    int,
+]:
     """Generate random inputs for vatt idx computation.
 
     Args:
@@ -52,7 +65,8 @@ def generate_random_inputs(
         device: Device to create tensors on.
 
     Returns:
-        Tuple of (keys, queries, base_sample_size, max_sample_size, epsilon, delta_ppf, scaling, start_offset, end_offset).
+        Tuple of (keys, queries, values, base_sample_size, max_sample_size, epsilon, delta_ppf,
+        scaling, start_offset, end_offset).
     """
     torch.manual_seed(seed)
     if device == "cuda":
@@ -63,6 +77,9 @@ def generate_random_inputs(
     ).to(torch.float32)
     queries: torch.Tensor = torch.randn(
         batch_size, num_query_heads, seq_len_queries, head_dim, device=device
+    ).to(torch.float32)
+    values: torch.Tensor = torch.randn(
+        batch_size, num_key_heads, seq_len_keys, head_dim, device=device
     ).to(torch.float32)
 
     epsilon: float = 0.1
@@ -75,6 +92,7 @@ def generate_random_inputs(
     return (
         keys,
         queries,
+        values,
         base_sample_size,
         max_sample_size,
         epsilon,
@@ -85,8 +103,24 @@ def generate_random_inputs(
     )
 
 
+def ensure_stdlib_profile() -> None:
+    """Ensure the standard-library profile module is used."""
+    filtered_paths: list[str] = [
+        path for path in sys.path if Path(path).name != "test_dsl_vatt"
+    ]
+    sys.path = filtered_paths
+    profile_module: ModuleType | None = sys.modules.get("profile")
+    if profile_module is not None and not hasattr(profile_module, "run"):
+        del sys.modules["profile"]
+    import importlib
+
+    stdlib_profile: ModuleType = importlib.import_module("profile")
+    sys.modules["profile"] = stdlib_profile
+
+
 def measure_latency(
     vatt_idx_fn: Callable,
+    function_name: str,
     num_warmup: int = 5,
     num_runs: int = 50,
     device: str = "cpu",
@@ -95,6 +129,7 @@ def measure_latency(
 
     Args:
         vatt_idx_fn: Function to profile.
+        function_name: Name of the function to profile.
         num_warmup: Number of warmup runs.
         num_runs: Number of timing runs.
         device: Device to run on.
@@ -104,9 +139,20 @@ def measure_latency(
     """
     print(f"\n⏱️  Measuring latency ({num_warmup} warmup, {num_runs} runs)...")
 
+    keys: torch.Tensor
+    queries: torch.Tensor
+    values: torch.Tensor
+    base_sample_size: int
+    max_sample_size: int
+    epsilon: float
+    delta_ppf: float
+    scaling: float
+    start_offset: int
+    end_offset: int
     (
         keys,
         queries,
+        values,
         base_sample_size,
         max_sample_size,
         epsilon,
@@ -131,17 +177,31 @@ def measure_latency(
 
     with torch.no_grad():
         for _ in range(num_warmup):
-            _ = vatt_idx_fn(
-                keys=keys,
-                queries=queries,
-                base_sample_size=base_sample_size,
-                max_sample_size=max_sample_size,
-                epsilon=epsilon,
-                delta_ppf=delta_ppf,
-                scaling=scaling,
-                start_offset=start_offset,
-                end_offset=end_offset,
-            )
+            if function_name == "compute_attention":
+                _ = vatt_idx_fn(
+                    keys=keys,
+                    queries=queries,
+                    values=values,
+                    base_sample_size=base_sample_size,
+                    max_sample_size=max_sample_size,
+                    epsilon=epsilon,
+                    delta_ppf=delta_ppf,
+                    scaling=scaling,
+                    start_offset=start_offset,
+                    end_offset=end_offset,
+                )
+            else:
+                _ = vatt_idx_fn(
+                    keys=keys,
+                    queries=queries,
+                    base_sample_size=base_sample_size,
+                    max_sample_size=max_sample_size,
+                    epsilon=epsilon,
+                    delta_ppf=delta_ppf,
+                    scaling=scaling,
+                    start_offset=start_offset,
+                    end_offset=end_offset,
+                )
         if device == "cuda":
             torch.cuda.synchronize()
 
@@ -152,17 +212,31 @@ def measure_latency(
                 torch.cuda.synchronize()
             start_time: float = time.perf_counter()
 
-            _ = vatt_idx_fn(
-                keys=keys,
-                queries=queries,
-                base_sample_size=base_sample_size,
-                max_sample_size=max_sample_size,
-                epsilon=epsilon,
-                delta_ppf=delta_ppf,
-                scaling=scaling,
-                start_offset=start_offset,
-                end_offset=end_offset,
-            )
+            if function_name == "compute_attention":
+                _ = vatt_idx_fn(
+                    keys=keys,
+                    queries=queries,
+                    values=values,
+                    base_sample_size=base_sample_size,
+                    max_sample_size=max_sample_size,
+                    epsilon=epsilon,
+                    delta_ppf=delta_ppf,
+                    scaling=scaling,
+                    start_offset=start_offset,
+                    end_offset=end_offset,
+                )
+            else:
+                _ = vatt_idx_fn(
+                    keys=keys,
+                    queries=queries,
+                    base_sample_size=base_sample_size,
+                    max_sample_size=max_sample_size,
+                    epsilon=epsilon,
+                    delta_ppf=delta_ppf,
+                    scaling=scaling,
+                    start_offset=start_offset,
+                    end_offset=end_offset,
+                )
 
             if device == "cuda":
                 torch.cuda.synchronize()
@@ -229,6 +303,7 @@ def load_function_from_file(
 
 def main() -> None:
     """Main entry point."""
+    ensure_stdlib_profile()
     parser = argparse.ArgumentParser(description="Latency for vatt idx computation")
     parser.add_argument(
         "file",
@@ -285,6 +360,7 @@ def main() -> None:
 
     _ = measure_latency(
         vatt_idx_fn,
+        function_name=args.function_name,
         num_warmup=args.num_warmup,
         num_runs=args.num_runs,
         device=args.device,

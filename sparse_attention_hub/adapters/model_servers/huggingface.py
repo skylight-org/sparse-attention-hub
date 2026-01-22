@@ -1,7 +1,7 @@
 """HuggingFace implementation of ModelServer for centralized model management."""
 
 import gc
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -58,20 +58,17 @@ class ModelServerHF(ModelServer):
             # Handle device placement
             if gpu_id is not None:
                 if torch.cuda.is_available():
-                    if type(gpu_id) == str and gpu_id.startswith("cuda"):
-                        device = gpu_id
-                    else:
-                        device = "cuda:" + f"{gpu_id}"
+                    device: torch.device = torch.device(f"cuda:{gpu_id}")
                     self.logger.debug(f"Moving model {model_name} to device: {device}")
-                    model = model.to(device)
+                    model = model.to(device)  # type: ignore[arg-type]
                 else:
                     self.logger.warning(
                         f"CUDA not available, placing model {model_name} on CPU instead of GPU {gpu_id}"
                     )
-                    model = model.to("cpu")
+                    model = model.to(torch.device("cpu"))  # type: ignore[arg-type]
             else:
                 # Explicitly place on CPU
-                model = model.to("cpu")
+                model = model.to(torch.device("cpu"))  # type: ignore[arg-type]
 
             self.logger.info(
                 f"Successfully created HuggingFace model: {model_name} on {'GPU' if gpu_id is not None else 'CPU'}"
@@ -142,7 +139,7 @@ class ModelServerHF(ModelServer):
             # Move model to CPU before deletion to ensure GPU memory is freed
             if gpu_id is not None and torch.cuda.is_available():
                 try:
-                    model = model.to("cpu")
+                    model = model.to(torch.device("cpu"))
                     self.logger.debug("Moved model to CPU before deletion")
                 except Exception as e:
                     self.logger.warning(
@@ -253,7 +250,9 @@ class ModelServerHF(ModelServer):
             self.logger.warning(f"GPU {gpu_id} validation failed: {e}")
             return False
 
-    def get_gpu_memory_info(self, gpu_id: Optional[int] = None) -> Dict[str, float]:
+    def get_gpu_memory_info(
+        self, gpu_id: Optional[int] = None
+    ) -> Dict[str, Union[float, str]]:
         """Get GPU memory information for monitoring purposes.
 
         Args:

@@ -15,11 +15,14 @@ import types
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Tuple
+from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
+
 
 import torch
+import torch.nn.functional as F
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # Add project root to sys.path to allow importing from sparse_attention_hub
 project_root = Path(__file__).resolve().parent.parent
@@ -33,8 +36,13 @@ try:
     )
     from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import (
         LocalMaskerConfig,
-        OracleTopKConfig,
         SinkMaskerConfig,
+        #PQCacheConfig,
+        OracleTopKConfig,
+
+    )
+    from sparse_attention_hub.sparse_attention.research_attention.maskers.sampling.implementations.adaptive_sampling import (
+        AdaptiveSamplingMaskerConfig,
     )
 except ImportError as e:
     print(f"Error: Could not import required modules. {e}")
@@ -48,34 +56,41 @@ except ImportError as e:
 # Modify this section to change the model's attention behavior.
 # ==============================================================================
 
-# Option 1: Standard Dense Attention
-# SPARSE_CONFIG = None
 
-# Option 2: Sparse Attention (e.g., Oracle Top-K)
+#Sparse Attention ()
 SPARSE_CONFIG: Optional[ResearchAttentionConfig] = ResearchAttentionConfig(
     masker_configs=[
         SinkMaskerConfig(sink_size=128),
         LocalMaskerConfig(window_size=128),
-        OracleTopKConfig(heavy_size=0.5),
+        OracleTopKConfig(heavy_size=0.1),
+        AdaptiveSamplingMaskerConfig(
+            base_rate_sampling=0.05,
+            epsilon=0.1,
+            delta=0.1,
+            init_offset=128,
+            local_offset=128,
+        ),
     ]
 )
 
 # ==============================================================================
 
+# Global to track turns for warmup phase
+REQUEST_COUNT = 0
+
 app = FastAPI(title="Sparse Attention Model Server")
 model_adapter: Optional[ModelAdapterHF] = None
 
 class ChatMessage(BaseModel):
+    model_config = ConfigDict(extra="allow")
     role: str
     content: Optional[Union[str, List[Dict[str, Any]]]] = None
     tool_call_id: Optional[str] = None
     name: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
 
-    class Config:
-        extra = "allow"
-
 class ChatCompletionRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
     model: str
     messages: List[ChatMessage]
     temperature: Optional[float] = 0.7
@@ -86,9 +101,6 @@ class ChatCompletionRequest(BaseModel):
     stream: Optional[bool] = False
     tools: Optional[List[Dict[str, Any]]] = None
     tool_choice: Optional[Union[str, Dict[str, Any]]] = None
-
-    class Config:
-        extra = "allow"
 
 def parse_tool_calls(text: str) -> Tuple[List[Dict[str, Any]], str]:
     """
@@ -154,13 +166,9 @@ def parse_tool_calls(text: str) -> Tuple[List[Dict[str, Any]], str]:
     # 3. Handle Qwen-style special token blocks if they appear in text
     # Example: <|tool_call_start|>...
     if "<|tool_call_start|>" in clean_text:
-        # This is a bit more complex, usually it's followed by a JSON or specific format
         pass
 
-    # Special handling for 'think' or reasoning
-    # We've already added it to tool_calls, but we might want to keep the text 
-    # as well if there's no other content, to avoid empty content errors.
-    # However, OpenHands usually handles tool_calls with null content.
+    
     pass
 
     return tool_calls, clean_text.strip()
@@ -170,10 +178,17 @@ async def chat_completions(request: ChatCompletionRequest):
     """
     OpenAI-compatible chat completions endpoint.
     """
-    global model_adapter
+    global model_adapter, REQUEST_COUNT
     if model_adapter is None:
         raise HTTPException(status_code=500, detail="Model not initialized")
     
+    # Increment turn counter
+    REQUEST_COUNT += 1
+
+    # Reset the dense logging flag for this new request
+    if hasattr(model_adapter, 'sparse_attention') and model_adapter.sparse_attention:
+        model_adapter.sparse_attention._logged_dense = False
+
     # print(f"Received request: {request.json()}") # Debugging
     
     # Construct messages list for chat template
@@ -198,8 +213,6 @@ async def chat_completions(request: ChatCompletionRequest):
         if m.name:
             msg["name"] = m.name
         if m.tool_calls:
-            # IMPORTANT: Many chat templates (like Qwen) expect tool_calls[i].function.arguments
-            # to be a Python dictionary, not a JSON string.
             processed_tool_calls = []
             for tc in m.tool_calls:
                 new_tc = tc.copy()
@@ -289,7 +302,7 @@ async def chat_completions(request: ChatCompletionRequest):
     # Log raw output for debugging
     with open("server_debug.log", "a") as f:
         f.write(f"\n--- NEW REQUEST ---\n")
-        f.write(f"PROMPT: {prompt[:500]}...\n")
+        f.write(f"PROMPT: {prompt}\n")  # Full prompt, not truncated
         f.write(f"RAW OUTPUT: {generated_text}\n")
     
     # Clean up special tokens like <|endoftext|> or <|im_end|> if they appear
@@ -406,7 +419,7 @@ def main():
             model_name=args.model,
             sparse_attention_config=sparse_config,
             model_kwargs={
-                "torch_dtype": dtype,
+                "dtype": dtype,
                 "device_map": device,
                 "attn_implementation": "sdpa" if "cuda" in device else "eager",
             },
@@ -438,13 +451,83 @@ def main():
             return _orig_forward(*new_args, **new_kwargs)
 
         model_adapter.model.forward = _wrapped_forward
+
+        # Patch sparse attention to use dense fallback for prefill automatically
+        if sparse_config:
+            from sparse_attention_hub.sparse_attention.utils.kv_utils import _get_num_key_value_groups, repeat_kv
+            
+            sparse_attn_instance = model_adapter.sparse_attention
+            orig_custom_attn = sparse_attn_instance.custom_attention
+            
+            def patched_custom_attention(self, module, queries, keys, values, attention_mask, scaling, dropout, sparse_meta_data, **kwargs):
+                # 1. Check if we should use dense (SDPA)
+                # Prefill step (more than 1 query token) OR warmup phase (first 2 turns)
+                is_prefill = queries.shape[2] > 1
+                use_dense = is_prefill or (REQUEST_COUNT <= 2)
+
+                if use_dense:
+                    # Only print once per request, not per layer
+                    if not hasattr(self, '_logged_dense') or not getattr(self, '_logged_dense', False):
+                        phase = "PREFILL" if is_prefill else f"TURN {REQUEST_COUNT} (WARMUP)"
+                        print(f"[{phase}] Using SDPA (Dense) path for {queries.shape[2]} tokens", flush=True)
+                        self._logged_dense = True
+                        self._was_prefill = is_prefill
+
+                    # Native SDPA requires queries, keys, values to have the same number of heads (GQA/MQA handling)
+                    num_key_value_groups = _get_num_key_value_groups(queries, keys)
+                    key_states = repeat_kv(keys, num_key_value_groups)
+                    value_states = repeat_kv(values, num_key_value_groups)
+
+                    # Compute using SDPA
+                    # Note: queries shape is (B, H, L, D)
+                    # output shape will be (B, H, L, D)
+                    output = F.scaled_dot_product_attention(
+                        queries, key_states, value_states,
+                        attn_mask=attention_mask,
+                        dropout_p=dropout if module.training else 0.0,
+                        is_causal=False
+                    )
+
+                    # custom_attention expects (B, L, H, D) output (matching get_masked_attention_output)
+                    return output.transpose(1, 2).contiguous(), None
+
+                # 2. Verify we are switching to Sparse for decoding (query length 1)
+                if queries.shape[2] == 1 and getattr(self, '_was_prefill', False):
+                    if kwargs.get('layer_idx') == 0:
+                        print(f"[DECODING] Switching to Sparse (Vattn) path for generation...", flush=True)
+                        self._was_prefill = False
+
+                # Otherwise use the regular sparse attention ()
+                return orig_custom_attn(
+                    module, queries, keys, values, attention_mask, scaling, dropout, sparse_meta_data, **kwargs
+                )
+            
+            sparse_attn_instance.custom_attention = types.MethodType(patched_custom_attention, sparse_attn_instance)
+            print("Successfully patched sparse attention to use SDPA dense fallback for prefill and warmup.")
+
         print("Successfully patched model forward and validation for sparse metadata handling.")
         print("Model loaded successfully.")
+
+        
+        #metrics logging
+        result_dir = Path("./server_metrics/")
+        result_dir.mkdir(exist_ok=True)
+        metric_logger = MicroMetricLogger()
+        metric_logger.configure_logging(
+            log_path=result_dir,
+            enabled_metrics=[
+                "research_attention_density",
+                "research_attention_output_error",
+            ],
+        )
+        metric_logger.flush()
+        
     except Exception as e:
         print(f"Error loading model: {e}")
         sys.exit(1)
     
     print(f"Starting server on 0.0.0.0:{port}...")
+        
     uvicorn.run(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":

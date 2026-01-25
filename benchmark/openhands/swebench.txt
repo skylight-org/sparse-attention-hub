@@ -42,7 +42,7 @@ pytest-dev__pytest-5809
 
 - Run instructions:
 in one terminal, run (with CUDA_VISIBLE_DEVICES flag if you want to run on multiple devices)
-CUDA_VISIBLE_DEVICES=1 python scripts/start_server.py Qwen/Qwen3-Coder-30B-A3B-Instruct dense 4001
+CUDA_VISIBLE_DEVICES=1 python scripts/start_server.py Qwen/Qwen3-Coder-30B-A3B-Instruct dense 4000
 generally, run with format [python scripts/start_server.py] + [MODEL NAME] + [dense/sparse config] + [port]
 
 in another terminal, run 
@@ -58,4 +58,10 @@ uv run python -m benchmarks.swebench.build_images \
 
 
 Instructions are also in the openhands repo README.md
+
+
+uv run swebench-infer --max-iterations 1 --note pqcache_test --select test_sympy_gpu5.txt local_llm_config_port4000.json
+
+
+CUDA_VISIBLE_DEVICES=5  PYTORCH_ALLOC_CONF=expandable_segments:True python scripts/start_server.py Qwen/Qwen3-Coder-30B-A3B-Instruct 4000
 

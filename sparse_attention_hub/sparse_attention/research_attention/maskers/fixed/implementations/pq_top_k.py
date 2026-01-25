@@ -447,7 +447,7 @@ class PQCache(TopKMasker):
             repeat_centroids: torch.Tensor = centroids
         else:
             # Manually repeat along head dimension for 5D tensor
-            repeat_centroids: torch.Tensor = (
+            repeat_centroids = (
                 centroids[:, :, None, :, :, :]
                 .expand(bsz, kv_heads, num_key_value_groups, n_subvec, cent_cnt, -1)
                 .reshape(bsz, kv_heads * num_key_value_groups, n_subvec, cent_cnt, -1)

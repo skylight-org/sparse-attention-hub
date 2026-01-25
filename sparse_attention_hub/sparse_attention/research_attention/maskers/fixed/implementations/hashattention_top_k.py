@@ -93,7 +93,7 @@ class HashAttentionTopKMasker(TopKMasker):
 
         # Ensure hat weights are on the same device as the keys
         # This will move the weights to the GPU if they are on the CPU on the first call
-        self._ensure_hat_weights_on_device(keys.device)
+        self._ensure_hat_weights_on_device(str(keys.device))
 
         if previous_mask.is_full_mask():
             return previous_mask

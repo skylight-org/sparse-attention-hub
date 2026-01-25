@@ -57,10 +57,20 @@ class ModelAdapterHF(ModelAdapter):
         self._sparse_attention_available: bool = sparse_attention_config is not None
         # create model and tokenizer
 
+        # Convert device string to GPU ID for ModelServer
+        gpu_id: Optional[int] = None
+        if self.device.startswith("cuda"):
+            if self.device == "cuda":
+                gpu_id = 0 if torch.cuda.is_available() else None
+            else:
+                # Extract GPU ID from "cuda:0", "cuda:1", etc.
+                try:
+                    gpu_id = int(self.device.split(":")[1])
+                except (IndexError, ValueError):
+                    gpu_id = None
+
         model_server = ModelServerHF()
-        self.model = model_server.get_model(
-            self.model_name, self.device, self.model_kwargs
-        )
+        self.model = model_server.get_model(self.model_name, gpu_id, self.model_kwargs)
         self.tokenizer = model_server.get_tokenizer(
             self.model_name, self.tokenizer_kwargs
         )
@@ -209,7 +219,7 @@ class ModelAdapterHF(ModelAdapter):
             scaling: float = 1.0,
             dropout: float = 0.0,
             **kwargs: Dict[str, Any],
-        ):
+        ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
             """Custom attention callable for HuggingFace integration."""
             if hasattr(module, "layer_idx"):
                 layer_idx = getattr(module, "layer_idx", None)
@@ -373,7 +383,7 @@ class ModelAdapterHF(ModelAdapter):
         if self.tokenizer is None:
             raise ValueError("Tokenizer not initialized")
 
-        max_new_tokens: int = generation_kwargs.get("max_new_tokens", 50)  # type: ignore
+        max_new_tokens: int = generation_kwargs.get("max_new_tokens", 50)
         context_length: int = context_outputs.past_key_values.get_seq_length()
 
         position_ids = torch.arange(

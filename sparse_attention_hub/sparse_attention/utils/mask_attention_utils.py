@@ -338,15 +338,58 @@ def get_attention_numerator(
     return _get_attention_numerator(exp_attention_weights, value_states)
 
 
+def apply_sink_bias(
+    num: torch.Tensor,
+    den: torch.Tensor,
+    exp_attention_weights: Optional[torch.Tensor],
+    queries: torch.Tensor,
+    keys: torch.Tensor,
+    attention_mask: Optional[torch.Tensor],
+    sinks: Optional[torch.Tensor],
+    scaling: float,
+) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+    if sinks is None:
+        return num, den, exp_attention_weights
+
+    assert sinks.ndim == 1, f"sinks must be 1D tensor of shape [H], got {sinks.shape}"
+    B, H, Q = queries.shape[0], queries.shape[1], queries.shape[2]
+    sinks_row = sinks.view(1, H, 1, 1).expand(B, H, Q, 1)
+
+    # Recompute regular logits to get old row-wise max (WITHOUT sink)
+    num_key_value_groups_k = _get_num_key_value_groups(queries, keys)
+    key_states = repeat_kv(keys, num_key_value_groups_k)
+
+    logits = torch.matmul(queries, key_states.transpose(2, 3)) * scaling  # [B,H,Q,K]
+    if attention_mask is not None:
+        logits = logits + attention_mask[:, :, :, : key_states.shape[-2]]
+
+    old_max = logits.max(dim=-1, keepdim=True).values  # [B,H,Q,1]
+    new_max = torch.maximum(old_max, sinks_row)
+
+    # Rescale everything that was computed in the (logits - old_max) exp scale
+    scale = torch.exp((old_max - new_max).to(torch.float32)).to(den.dtype)  # [B,H,Q,1]
+    num = num * scale
+    den = den * scale
+    if exp_attention_weights is not None:
+        exp_attention_weights = exp_attention_weights * scale
+
+    # Add sink contribution in the new_max scale
+    sink_exp = torch.exp((sinks_row - new_max).to(torch.float32)).to(
+        den.dtype
+    )  # [B,H,Q,1]
+    den = den + sink_exp
+
+    return num, den, exp_attention_weights
+
+
 # GET MASKED ATTENTION OUTPUT
-
-
 def get_masked_attention_output(
     module: nn.Module,
     queries: torch.Tensor,
     keys: torch.Tensor,
     values: torch.Tensor,
     attention_mask: Optional[torch.Tensor],
+    sinks: Optional[torch.Tensor],
     scaling: float,
     dropout: float,
     sparse_attention_mask: Mask,
@@ -394,6 +437,19 @@ def get_masked_attention_output(
     # Use internal helpers with pre-computed weights
     num: torch.Tensor = _get_attention_numerator(exp_attention_weights, value_states)
     den: torch.Tensor = _get_attention_denominator(exp_attention_weights)
+
+    num, den, exp_attention_weights = apply_sink_bias(
+        num=num,
+        den=den,
+        exp_attention_weights=exp_attention_weights
+        if return_attention_weights
+        else None,
+        queries=queries,
+        keys=keys,
+        attention_mask=attention_mask,
+        sinks=sinks,
+        scaling=scaling,
+    )
 
     # Compute final attention output
     attention_output: torch.Tensor = (num / den).transpose(1, 2).contiguous()

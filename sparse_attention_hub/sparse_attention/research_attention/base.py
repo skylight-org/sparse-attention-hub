@@ -69,7 +69,6 @@ class ResearchAttention(SparseAttention):
         attention_mask: Optional[torch.Tensor],
         scaling: float,
         dropout: float,
-        sparse_meta_data: Dict[Any, Any],
         **kwargs: Dict[str, Any],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Compute research attention mechanism with masking.
@@ -82,11 +81,18 @@ class ResearchAttention(SparseAttention):
             attention_mask: Optional attention mask of shape (b, h, sq, sk)
             scaling: Scaling factor for attention weights
             dropout: Dropout probability
-            **kwargs: Additional keyword arguments
+            **kwargs: Additional keyword arguments, must include sparse_meta_data
 
         Returns:
             Tuple of attention output and optional attention weights.
         """
+        # Extract sparse_meta_data from kwargs
+        if "sparse_meta_data" not in kwargs:
+            raise ValueError(
+                "sparse_meta_data must be provided in kwargs while calling custom_attention()"
+            )
+        sparse_meta_data: Dict[Any, Any] = kwargs.pop("sparse_meta_data")
+
         # Create an empty Mask object
         mask_shape: Tuple[int, int, int, int] = (
             queries.shape[0],
@@ -119,6 +125,10 @@ class ResearchAttention(SparseAttention):
                 metadata={"layer_idx": kwargs["layer_idx"]},
             )
 
+        s_aux_raw: Any = kwargs.pop("s_aux", None)
+        s_aux: Optional[torch.Tensor] = (
+            s_aux_raw if isinstance(s_aux_raw, torch.Tensor) else None
+        )
         # Call compute_masked_attention_output on the result of the last mask
         # Always request attention weights to match the expected return signature
         attention_output: torch.Tensor
@@ -129,6 +139,7 @@ class ResearchAttention(SparseAttention):
             keys=keys,
             values=values,
             attention_mask=attention_mask,
+            sinks=s_aux,
             scaling=scaling,
             dropout=dropout,
             sparse_attention_mask=sparse_attention_mask,

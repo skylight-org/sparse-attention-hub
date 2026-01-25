@@ -31,6 +31,8 @@ class FixedMasker(ResearchMasker):
         queries: torch.Tensor,
         values: torch.Tensor,
         attention_mask: torch.Tensor,
+        scaling: float,
+        dropout: float,
         sparse_meta_data: Dict[Any, Any],
         previous_mask: Mask,
         **kwargs: Dict[str, Any],
@@ -89,6 +91,8 @@ class TopKMasker(FixedMasker):
         queries: torch.Tensor,
         values: torch.Tensor,
         attention_mask: torch.Tensor,
+        scaling: float,
+        dropout: float,
         sparse_meta_data: Dict[Any, Any],
         previous_mask: Mask,
         **kwargs: Dict[str, Any],
@@ -110,7 +114,7 @@ class TopPMaskerConfig(FixedMaskerConfig):
 
     top_p: float
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate top_p parameter."""
         if not 0.0 <= self.top_p <= 1.0:
             raise ValueError(f"top_p must be in range [0, 1], got {self.top_p}")
@@ -131,6 +135,8 @@ class TopPMasker(FixedMasker):
         queries: torch.Tensor,
         values: torch.Tensor,
         attention_mask: torch.Tensor,
+        scaling: float,
+        dropout: float,
         sparse_meta_data: Dict[Any, Any],
         previous_mask: Mask,
         **kwargs: Dict[str, Any],

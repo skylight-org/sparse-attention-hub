@@ -25,6 +25,7 @@ from benchmark.ruler32k import Ruler32K
 from benchmark.longbench import LongBench
 from benchmark.loogle.loogle import Loogle
 from sparse_attention_hub.adapters import ModelAdapterHF
+from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import OracleTopKConfig
 
 # ---------------------------------------------------------------------
 # =======================

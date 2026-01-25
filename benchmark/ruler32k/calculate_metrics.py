@@ -34,7 +34,6 @@ def string_match_all(preds, refs):
     )
     return round(score, 2)
 
-
 def calculate_metrics(df: pd.DataFrame) -> dict:
     scores = {}
 

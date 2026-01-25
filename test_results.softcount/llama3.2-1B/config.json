@@ -1,0 +1,36 @@
+{
+  "model_kwargs": {
+    "torch_dtype": "torch.bfloat16"
+  },
+  "tokenizer_kwargs": {},
+  "sparse_attention_config": {
+    "masker_configs": [
+      {
+        "sink_size": 128,
+        "search_space": {}
+      },
+      {
+        "window_size": 128,
+        "search_space": {}
+      },
+      {
+        "heavy_size": 0.2,
+        "K": 8,
+        "L": 60,
+        "tau": 0.7
+      }
+    ]
+  },
+  "generation_kwargs": {
+    "max_new_tokens": "52"
+  },
+  "request_kwargs": {
+    "max_requests": 100,
+    "max_context_length": 32000
+  },
+  "benchmark_name": "longbench",
+  "subsets_to_run": [
+    "passage_retrieval_en"
+  ],
+  "huggingface_dataset_id": "Xnhyacinth/LongBench"
+}

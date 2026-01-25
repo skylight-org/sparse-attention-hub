@@ -1,71 +1,213 @@
 #!/usr/bin/env python3
-"""
-Simple Benchmark Example
-
-A beginner-friendly example showing how to run a basic benchmark comparison
-between dense and sparse attention using the sparse-attention-hub framework.
-
-This example uses the MockBenchmark (5 simple samples) for quick demonstration:
-- Easy-to-understand reading comprehension questions
-- Short contexts (<250 words each)
-- Fast execution for testing and learning
-
-Usage:
-    python 04_simple_benchmark_example.py
-"""
-
 import os
-import time
 from pathlib import Path
-
+import sys
+import json
+import itertools
+import gc
 import torch
 
-# Ensure we're in the correct directory and add to Python path
-import sys
+# ---------------------------------------------------------------------
+# Project setup
+# ---------------------------------------------------------------------
+os.chdir("/scratch/sj157/sparse-attention-hub")
+sys.path.insert(0, "/scratch/sj157/sparse-attention-hub")
 
-# Change to directory two levels below current location
-os.chdir('/scratch/sj157/sparse-attention-hub')
-sys.path.insert(0, '/scratch/sj157/sparse-attention-hub')
-
-from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import (
-    DoubleSparsityTopKMaskerConfig
+    SinkMaskerConfig,
+    LocalMaskerConfig,
+    BucketMaskerConfig,
+    PQCacheConfig,
+    QuestTopKMaskerConfig
 )
-
-#from benchmark.longbench import LongBench
 from benchmark.ruler32k import Ruler32K
+from benchmark.longbench import LongBench
+from benchmark.loogle.loogle import Loogle
 from sparse_attention_hub.adapters import ModelAdapterHF
 
-def main():
-    # model_name = "mistralai/Ministral-3-8B-Instruct-2512"
-    model_name = "Qwen/Qwen3-Next-80B-A3B-Instruct"
+# ---------------------------------------------------------------------
+# =======================
+# USER EDIT SECTION
+# =======================
+# ---------------------------------------------------------------------
+BENCHMARK_KIND = "ruler"  # "ruler" or "longbench" or "loogle"
 
-    sparse_attention_config = ResearchAttentionConfig(masker_configs=[
-    ])
-    
-    print("  ✓ Loading model...")
-    adapter = ModelAdapterHF(
-        model_name=model_name,
-        sparse_attention_config=None,
-        model_kwargs= {"torch_dtype": torch.bfloat16, "device_map": "auto"},
-    )
-    
-    #benchmark = LongBench(['passage_retrieval_en'])
-    benchmark = Ruler32K(['vt'])
+MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
+# MODEL_NAME = "Qwen/Qwen3-30B-A3B-Instruct-2507"
+# MODEL_NAME = "Qwen/Qwen3-4B-Instruct-2507"
+# MODEL_NAME = "meta-llama/Llama-3.2-3B-Instruct"
+# MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
+DEVICE = "cuda"
 
-    result_dir = Path("./test_results.vt.4096.2.2.q_proj/")
-    result_dir.mkdir(exist_ok=True)
-    metric_logger = MicroMetricLogger()
-    metric_logger.configure_logging(
-            log_path=result_dir,
-            enabled_metrics=[
-                "research_attention_density",
-                "research_attention_output_error",
-            ],
+RESULTS_ROOT = Path("/scratch/sj157/sparse-attention-hub/test_results.softcount/llama3.2-1B")
+RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
+
+METRICS_PATH = RESULTS_ROOT / "metrics.json"
+LOG_PATH = RESULTS_ROOT / "results_fwe_20pct_longbench_llama3.1-8B_fwe.txt"
+
+MAX_REQUESTS = 100
+MAX_CONTEXT_LENGTH = 32000
+
+RULER_DATASETS = [
+    # "qa_1",
+    # "qa_2",
+    # "vt",
+    "fwe",
+    # "niah_multikey_2",
+    # "niah_multikey_3",
+]
+LONGBENCH_DATASETS = [
+    'narrativeqa', 
+    'qasper', 
+    'multifieldqa_en', 
+    # 'multifieldqa_zh', 
+    'hotpotqa', 
+    '2wikimqa', 
+    'musique', 
+    # 'dureader', 
+    'gov_report', 
+    'qmsum', 
+    'multi_news', 
+    # 'vcsum', 
+    'trec', 
+    'triviaqa', 
+    'samsum', 
+    # 'lsht', 
+    'passage_count', 
+    'passage_retrieval_en', 
+    # 'passage_retrieval_zh', 
+    # 'lcc', 
+    # 'repobench-p', 
+    # 'qasper_e', 
+    # 'multifieldqa_en_e', 
+    # 'hotpotqa_e', 
+    # '2wikimqa_e', 
+    # 'gov_report_e', 
+    # 'multi_news_e', 
+    # 'trec_e', 
+    # 'triviaqa_e', 
+    # 'samsum_e', 
+    # 'passage_count_e', 
+    # 'passage_retrieval_en_e', 
+    # 'lcc_e', 
+    # 'repobench-p_e'
+]
+
+K_list = [12]
+L_list = [60]
+TAU_list = [0.3, 0.4, 0.5, 0.6, 0.7]
+heavy_list = [0.02]
+
+
+def append_result_line(K, L, heavy_size, tau, dataset_name, score_value):
+    line = f"K={K} L={L} tau={tau} heavy={heavy_size} | {dataset_name}={score_value}"
+    print(line)
+    with open(LOG_PATH, "a") as f:
+        f.write(line + "\n")
+
+
+def read_task_score(dataset_name: str) -> str:
+    """Robust parsing: task_scores[dataset] can be dict or scalar (works for RULER + LongBench)."""
+    if not METRICS_PATH.exists():
+        return "NaN"
+    try:
+        with open(METRICS_PATH, "r") as f:
+            metrics = json.load(f)
+        task_scores = metrics.get("task_scores", {})
+        ts = task_scores.get(dataset_name, None)
+
+        if isinstance(ts, dict) and ts:
+            return str(next(iter(ts.values())))
+        if isinstance(ts, (int, float)):
+            return str(ts)
+        return "NaN"
+    except Exception:
+        return "NaN"
+
+
+def run_single(dataset_name: str, K: int, L: int, heavy_size: float, tau: float):
+    adapter = None
+    benchmark = None
+    try:
+        print(
+            f"\n=== Dataset: {dataset_name} | "
+            f"K={K}, L={L}, tau={tau}, heavy={heavy_size} | "
+            f"BENCH={BENCHMARK_KIND} ==="
         )
-    metric_logger.flush()
-    benchmark.run_benchmark(adapter, result_dir, request_kwargs={"max_requests": 50, "max_context_length": 32000}, generation_kwargs={"max_new_tokens": 32})
-    
+
+        sparse_attention_config = ResearchAttentionConfig(
+            masker_configs=[
+                SinkMaskerConfig(sink_size=128),
+                LocalMaskerConfig(window_size=128),
+                BucketMaskerConfig(K=K, L=L, tau=tau, heavy_size=heavy_size),
+                # PQCacheConfig(
+                #     heavy_size=0.1,
+                #     pq_group_factor=2,  # pq_sub_dim = head_dim // pq_group_factor (e.g., 128 // 2 = 64)
+                #     pq_bits=6,
+                #     kmeans_iter=10,
+                #     init_offset=128,
+                #     metric="euclidean",
+                # ),
+                # QuestTopKMaskerConfig(
+                #     heavy_size=heavy_size,
+                #     page_size=8
+                # ),
+            ]
+        )
+
+        adapter = ModelAdapterHF(
+            model_name=MODEL_NAME,
+            sparse_attention_config=sparse_attention_config,
+            model_kwargs={"torch_dtype": torch.bfloat16},
+            generate_kwargs={"max_new_tokens": 32},
+            device=DEVICE,
+        )
+
+        if BENCHMARK_KIND == "ruler":
+            benchmark = Ruler32K([dataset_name])
+        elif BENCHMARK_KIND == "longbench":
+            benchmark = LongBench([dataset_name])
+        elif BENCHMARK_KIND == "loogle":
+            benchmark = Loogle(subsets_to_run=["shortdep_qa"])
+        else:
+            raise ValueError(
+                f"BENCHMARK_KIND must be 'ruler' or 'longbench', got {BENCHMARK_KIND!r}"
+            )
+
+        benchmark.run_benchmark(
+            adapter,
+            RESULTS_ROOT,
+            request_kwargs={"max_requests": MAX_REQUESTS, "max_context_length": MAX_CONTEXT_LENGTH},
+        )
+
+        score_value = read_task_score(dataset_name)
+        append_result_line(K, L, heavy_size, tau, dataset_name, score_value)
+
+    finally:
+        del benchmark
+        del adapter
+        gc.collect()
+        torch.cuda.empty_cache()
+
+
+def main():
+    if LOG_PATH.exists():
+        LOG_PATH.unlink()
+
+    DATASETS = RULER_DATASETS if BENCHMARK_KIND == "ruler" else LONGBENCH_DATASETS
+
+    for ds in DATASETS:
+        if not ds:
+            continue
+
+        print("\n\n============================")
+        print(f"### DATASET: {ds}")
+        print("============================")
+
+        for K, L, heavy_size, tau in itertools.product(K_list, L_list, heavy_list, TAU_list):
+            run_single(ds, K, L, heavy_size, tau)
+
+
 if __name__ == "__main__":
-    main() 
+    main()

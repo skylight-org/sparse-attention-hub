@@ -1,0 +1,38 @@
+{
+  "model_kwargs": {
+    "torch_dtype": "torch.bfloat16"
+  },
+  "tokenizer_kwargs": {},
+  "sparse_attention_config": {
+    "masker_configs": [
+      {
+        "sink_size": 128,
+        "search_space": {}
+      },
+      {
+        "window_size": 128,
+        "search_space": {}
+      },
+      {
+        "heavy_size": 0.1,
+        "pq_group_factor": 2,
+        "pq_bits": 6,
+        "kmeans_iter": 10,
+        "init_offset": 128,
+        "metric": "euclidean"
+      }
+    ]
+  },
+  "generation_kwargs": {
+    "max_new_tokens": 32
+  },
+  "request_kwargs": {
+    "max_requests": 100,
+    "max_context_length": 4000
+  },
+  "benchmark_name": "ruler32k",
+  "subsets_to_run": [
+    "qa_2"
+  ],
+  "huggingface_dataset_id": "xAlg-AI/att-hub-ruler-32k"
+}

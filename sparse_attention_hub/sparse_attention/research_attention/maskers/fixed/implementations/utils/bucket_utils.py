@@ -1,3 +1,5 @@
+# /home/ac508/sparse-attention-hub/sparse_attention_hub/sparse_attention/research_attention/maskers/fixed/implementations/utils/bucket_utils.py
+
 """Bucket utility functions."""
 
 import itertools
@@ -23,19 +25,12 @@ def get_hyper_planes(
     """
     Independent SRP planes per table:
         planes: [L, P, D]
-
-    Caches in the provided `cache` dict so that multiple calls
-    with the same (D, device, dtype, L, P) reuse the planes.
+    Memoized by (D, device, dtype, L, P).
     """
     key = (D, device, dtype, L, P)
     planes = cache.get(key)
     if planes is None:
-        base = torch.randn(
-            (L, P, D),
-            device=device,
-            dtype=torch.float32,
-            generator=rng,
-        )
+        base = torch.randn((L, P, D), device=device, dtype=torch.float32, generator=rng)
         planes = base.to(dtype)
         cache[key] = planes
     return planes
@@ -48,10 +43,8 @@ def get_protos_T(
     dtype: torch.dtype,
 ) -> torch.Tensor:
     """
-    Hypercube corners: protos_T in {-1,+1}^{P}, shape [P, R]
-
-    Uses the given `cache` dict to memoize by:
-        (P, device, dtype)
+    Hypercube corners: protos_T in {-1,+1}^P, shape [P, R], where R = 2^P.
+    Memoized by (P, device, dtype).
     """
     key = (P, device, dtype)
     protos_T = cache.get(key)
@@ -73,97 +66,55 @@ def pack_bits(bits: torch.Tensor) -> torch.Tensor:
     returns: [...] int16
     """
     P = bits.shape[-1]
-    weights = 1 << torch.arange(
-        P - 1, -1, -1, device=bits.device, dtype=torch.int16
-    )  # [P] with MSB first
-    return torch.sum(
-        bits.to(torch.int16) * weights.view(*([1] * (bits.ndim - 1)), P),
-        dim=-1,
-    )
+    weights = (1 << torch.arange(P - 1, -1, -1, device=bits.device, dtype=torch.int16))  # [P]
+    view_shape = (*([1] * (bits.ndim - 1)), P)
+    return torch.sum(bits.to(torch.int16) * weights.view(*view_shape), dim=-1)
 
 
 def hard_hash(tensor: torch.Tensor, planes: torch.Tensor) -> torch.Tensor:
     """
-    tensor: [B,H,N,D], planes: [L,P,D]
-    returns bucket codes per table: [B,H,L,N]
+    tensor: [B, H, N, D]
+    planes: [L, P, D]
+    returns bucket codes per table: [B, H, L, N]
     """
-    # [B,H,N,L,P]
-    proj = torch.einsum("bhnd,lkd->bhnlk", tensor, planes)
-    bits = proj >= 0  # bool
-    # [B,H,N,L]
-    codes = pack_bits(bits)
-    # [B,H,L,N]
-    return codes.permute(0, 1, 3, 2).contiguous()
+    proj = torch.einsum("bhnd,lkd->bhnlk", tensor, planes)  # [B,H,N,L,P]
+    bits = proj >= 0
+    codes = pack_bits(bits)  # [B,H,N,L]
+    return codes.permute(0, 1, 3, 2).contiguous()  # [B,H,L,N]
 
 
 def soft_hash(
     queries: torch.Tensor,
     planes: torch.Tensor,
     protos_T: torch.Tensor,
+    tau: float = 1.0,
 ) -> torch.Tensor:
     """
-    queries: [B,H,Q,D]
-    planes:  [L,P,D]
-    protos_T: [P,R]
-    returns soft bucket probabilities: [B,H,Q,L,R]
+    queries:   [B, H, Q, D]
+    planes:    [L, P, D]
+    protos_T:  [P, R]
+    returns soft bucket probabilities: [B, H, Q, L, R]
     """
-    # [B,H,Q,L,P]
-    q_proj = torch.einsum("bhqd,lkd->bhqlk", queries, planes)
+    q_proj = torch.einsum("bhqd,lkd->bhqlk", queries, planes)  # [B,H,Q,L,P]
     temp = math.sqrt(queries.size(-1))
-    logits = torch.einsum(
-        "bhqlk,kr->bhqlr",
-        torch.tanh(q_proj) / max(temp, 1e-6),
-        protos_T,
-    )  # [B,H,Q,L,R]
-    return F.softmax(logits, dim=-1)
+    qh = torch.tanh(q_proj) / max(temp, 1e-6)
+    logits = torch.einsum("bhqlk,kr->bhqlr", qh, protos_T)  # [B,H,Q,L,R]
+
+    tau = float(tau)
+    if tau <= 0:
+        raise ValueError(f"tau must be > 0, got {tau}")
 
 
-def get_collision_counts(
-    key_buckets: torch.Tensor,  # [B,H,L,N]
-    top_buckets: torch.Tensor,  # [B,H,Q,L,top_t]
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    For each table ℓ, mark tokens whose bucket matches any selected bucket in that table.
-    Then union across tables, and also return per-(B,H,Q,N) collision counts.
-
-    Returns:
-        candidate_mask: [B,H,Q,N] (bool)
-        collision_counts:    [B,H,Q,N] (int)  # # of tables where (q,i) matched
-    """
-    B, H, L, N = key_buckets.shape
-    _, _, Q, _, top_t = top_buckets.shape
-
-    # match_any[b,h,q,l,i] = True if key_buckets[b,h,l,i] equals
-    # any of top_buckets[b,h,q,l,t] over t.
-    match_any = torch.zeros(
-        (B, H, Q, L, N), dtype=torch.bool, device=key_buckets.device
-    )
-
-    # [B,H,1,L,N], broadcasts across Q and the last dim
-    kb = key_buckets.unsqueeze(2)  # [B,H,1,L,N]
-
-    for t in range(top_t):
-        # Select the t-th chosen bucket per (B,H,Q,L)
-        tb_t = top_buckets[..., t].unsqueeze(-1)  # [B,H,Q,L,1]
-        match_any |= kb == tb_t  # [B,H,Q,L,N]
-
-    # Union across L tables → candidate mask [B,H,Q,N]
-    candidate_mask = match_any.any(dim=3)
-
-    # Collision counts: number of tables where (q,i) matched
-    collision_counts = match_any.sum(dim=3)  # [B,H,Q,N]
-
-    return candidate_mask, collision_counts
+    return F.softmax(logits/tau, dim=-1)
 
 
-def attention_mask_to_allowed_prob(
-    attention_mask: torch.Tensor, K: int
-) -> torch.Tensor:
+def attention_mask_to_allowed_prob(attention_mask: torch.Tensor, K: int) -> torch.Tensor:
     """
     Convert attention_mask to allowed-probabilities in [0,1], shape [B,1,*,K].
+
     Heuristics:
-        - bool masks: 0 => allow (1.0), 1 => forbid (0.0)
-        - additive float masks: >=0 => allow (1.0), negative => forbid (0.0)
+      - bool masks:          0 => allow (1.0), 1 => forbid (0.0)
+      - additive float mask: >=0 => allow (1.0), <0 => forbid (0.0)
     """
     am = attention_mask[..., :K]
     if am.dtype == torch.bool:
@@ -171,5 +122,120 @@ def attention_mask_to_allowed_prob(
     else:
         allowed = (am >= 0).to(torch.float32)
     if allowed.dim() == 3:
-        allowed = allowed.unsqueeze(1)  # [B,1,*,K]
+        allowed = allowed.unsqueeze(1)
     return allowed
+
+
+# def topk_soft_collision_scores_blockwise(
+#     q_probs: torch.Tensor,      # [B,H,Q,L,R] float probs
+#     key_buckets: torch.Tensor,  # [B,H,L,N] int bucket ids
+#     v_mag: torch.Tensor,        # [B,H,N] float
+#     allowed_bool: torch.Tensor, # [B,H,Q,N] bool
+#     M: int,
+#     block: int = 4096,
+# ) -> Tuple[torch.Tensor, torch.Tensor]:
+#     """
+#     Deterministic score for token j:
+#         score_j = (sum_l q_probs[..., l, b_j^(l)]) * ||v_j||_2
+#     No sampling, no top-t, no candidate set. Just compute exact scores and return top-M.
+
+#     Returns:
+#       top_idx:    [B,H,Q,M] int64
+#       top_scores: [B,H,Q,M] float
+#     Uses blockwise processing over keys to avoid materializing [B,H,Q,N].
+#     """
+#     B, H, Q, L, R = q_probs.shape
+#     _, _, _L, N = key_buckets.shape
+#     assert _L == L, f"key_buckets L={_L} != q_probs L={L}"
+#     assert v_mag.shape == (B, H, N), f"v_mag shape {v_mag.shape} != {(B,H,N)}"
+#     assert allowed_bool.shape == (B, H, Q, N), f"allowed_bool shape {allowed_bool.shape} != {(B,H,Q,N)}"
+
+#     device = q_probs.device
+#     dtype = q_probs.dtype
+
+#     M = max(1, min(int(M), N))
+
+#     best_scores = torch.full((B, H, Q, M), -torch.inf, device=device, dtype=dtype)
+#     best_idx = torch.zeros((B, H, Q, M), device=device, dtype=torch.long)
+
+#     for s in range(0, N, block):
+#         e = min(N, s + block)
+#         nb = e - s
+
+#         collision_block = torch.zeros((B, H, Q, nb), device=device, dtype=dtype)
+
+#         for l in range(L):
+#             probs_l = q_probs[:, :, :, l, :]  # [B,H,Q,R]
+#             buckets_l = key_buckets[:, :, l, s:e].to(torch.long)  # [B,H,nb]
+#             idx = buckets_l.unsqueeze(2).expand(B, H, Q, nb)      # [B,H,Q,nb]
+#             collision_block += torch.gather(probs_l, dim=-1, index=idx)
+
+#         score_block = collision_block * v_mag[:, :, s:e].unsqueeze(2)  # [B,H,Q,nb]
+#         score_block = score_block.masked_fill(~allowed_bool[:, :, :, s:e], -torch.inf)
+
+#         idx_block = torch.arange(s, e, device=device, dtype=torch.long).view(1, 1, 1, nb).expand(B, H, Q, nb)
+
+#         merged_scores = torch.cat([best_scores, score_block], dim=-1)
+#         merged_idx = torch.cat([best_idx, idx_block], dim=-1)
+
+#         top = torch.topk(merged_scores, k=M, dim=-1, largest=True)
+#         best_scores = top.values
+#         best_idx = torch.gather(merged_idx, dim=-1, index=top.indices)
+
+#     return best_idx, best_scores
+
+def topk_soft_collision_scores_blockwise(
+    q_probs: torch.Tensor,      # [B,H,Q,L,R] float probs (may be bf16/fp16)
+    key_buckets: torch.Tensor,  # [B,H,L,N] int bucket ids
+    v_mag: torch.Tensor,        # [B,H,N] float (any)
+    allowed_bool: torch.Tensor, # [B,H,Q,N] bool
+    M: int,
+    block: int = 4096,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Deterministic score:
+        score_j = (sum_l q_probs[..., l, b_j^(l)]) * ||v_j||_2
+    Uses float32 accumulation for stability.
+    """
+    B, H, Q, L, R = q_probs.shape
+    _, _, _L, N = key_buckets.shape
+    assert _L == L
+    assert v_mag.shape == (B, H, N)
+    assert allowed_bool.shape == (B, H, Q, N)
+
+    device = q_probs.device
+
+    M = max(1, min(int(M), N))
+
+    # Force float32 for stable accumulation / ranking
+    q_probs_f = q_probs.float()
+    v_mag_f = v_mag.float()
+
+    best_scores = torch.full((B, H, Q, M), -torch.inf, device=device, dtype=torch.float32)
+    best_idx = torch.zeros((B, H, Q, M), device=device, dtype=torch.long)
+
+    for s in range(0, N, block):
+        e = min(N, s + block)
+        nb = e - s
+
+        collision_block = torch.zeros((B, H, Q, nb), device=device, dtype=torch.float32)
+
+        for l in range(L):
+            probs_l = q_probs_f[:, :, :, l, :]  # [B,H,Q,R] float32
+            buckets_l = key_buckets[:, :, l, s:e].to(torch.long)  # [B,H,nb]
+            idx = buckets_l.unsqueeze(2).expand(B, H, Q, nb)      # [B,H,Q,nb]
+            collision_block += torch.gather(probs_l, dim=-1, index=idx)
+
+        score_block = collision_block * v_mag_f[:, :, s:e].unsqueeze(2)  # float32
+        score_block = score_block.masked_fill(~allowed_bool[:, :, :, s:e], -torch.inf)
+
+        idx_block = torch.arange(s, e, device=device, dtype=torch.long).view(1, 1, 1, nb).expand(B, H, Q, nb)
+
+        merged_scores = torch.cat([best_scores, score_block], dim=-1)
+        merged_idx = torch.cat([best_idx, idx_block], dim=-1)
+
+        top = torch.topk(merged_scores, k=M, dim=-1, largest=True)
+        best_scores = top.values
+        best_idx = torch.gather(merged_idx, dim=-1, index=top.indices)
+
+    return best_idx, best_scores

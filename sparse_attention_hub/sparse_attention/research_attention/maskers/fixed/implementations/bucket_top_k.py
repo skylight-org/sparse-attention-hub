@@ -1,5 +1,3 @@
-# /home/ac508/sparse-attention-hub/sparse_attention_hub/sparse_attention/research_attention/maskers/fixed/implementations/bucket_top_k.py
-
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
@@ -28,9 +26,9 @@ from .utils.bucket_utils import (
 
 
 @dataclass
-class BucketMaskerConfig(TopKMaskerConfig):
+class SocketMaskerConfig(TopKMaskerConfig):
     """
-    Deterministic soft-count BucketMasker (NO top-t, NO sampling, NO candidate set)
+    Deterministic soft-count SocketMasker (NO top-t, NO sampling, NO candidate set)
 
       • K:      # hyperplanes per table (buckets = 2**K)
       • L:      # hash tables
@@ -41,8 +39,8 @@ class BucketMaskerConfig(TopKMaskerConfig):
     tau: float = 0.3
 
 
-@MaskerRegistry.register(BucketMaskerConfig)
-class BucketMasker(TopKMasker):
+@MaskerRegistry.register(SocketMaskerConfig)
+class SocketMasker(TopKMasker):
     """
     Deterministic soft-count masker:
       1) Hard-hash keys with L sets of K planes -> bucket id per table.
@@ -52,7 +50,7 @@ class BucketMasker(TopKMasker):
       5) Pick top-M by score and return mask.
     """
 
-    def __init__(self, config: BucketMaskerConfig) -> None:
+    def __init__(self, config: SocketMaskerConfig) -> None:
         super().__init__(config)
 
         if config.K <= 0:
@@ -68,7 +66,7 @@ class BucketMasker(TopKMasker):
         self._planes_cache: Dict[Tuple[int, torch.device, torch.dtype, int, int], torch.Tensor] = {}
         self._protos_cache: Dict[Tuple[int, torch.device, torch.dtype], torch.Tensor] = {}
 
-        self._seed = 1234567
+        self._seed = 123456789
         self._rng_cache: Dict[torch.device, torch.Generator] = {}
 
     def _rng(self, device: torch.device) -> Optional[torch.Generator]:
@@ -184,7 +182,7 @@ class BucketMasker(TopKMasker):
         return Mask.create_mask_from_dense_mask(mask_shape, dense_mask, dtype=previous_mask.dtype)
 
     @classmethod
-    def create_from_config(cls, config: MaskerConfig) -> "BucketMasker":
-        if not isinstance(config, BucketMaskerConfig):
+    def create_from_config(cls, config: MaskerConfig) -> "SocketMasker":
+        if not isinstance(config, SocketMaskerConfig):
             raise ValueError(f"Invalid config type: {type(config)}")
         return cls(config)

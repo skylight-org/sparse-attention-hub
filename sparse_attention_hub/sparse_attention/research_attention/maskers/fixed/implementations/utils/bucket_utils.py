@@ -1,5 +1,3 @@
-# /home/ac508/sparse-attention-hub/sparse_attention_hub/sparse_attention/research_attention/maskers/fixed/implementations/utils/bucket_utils.py
-
 """Bucket utility functions."""
 
 import itertools
@@ -124,65 +122,6 @@ def attention_mask_to_allowed_prob(attention_mask: torch.Tensor, K: int) -> torc
     if allowed.dim() == 3:
         allowed = allowed.unsqueeze(1)
     return allowed
-
-
-# def topk_soft_collision_scores_blockwise(
-#     q_probs: torch.Tensor,      # [B,H,Q,L,R] float probs
-#     key_buckets: torch.Tensor,  # [B,H,L,N] int bucket ids
-#     v_mag: torch.Tensor,        # [B,H,N] float
-#     allowed_bool: torch.Tensor, # [B,H,Q,N] bool
-#     M: int,
-#     block: int = 4096,
-# ) -> Tuple[torch.Tensor, torch.Tensor]:
-#     """
-#     Deterministic score for token j:
-#         score_j = (sum_l q_probs[..., l, b_j^(l)]) * ||v_j||_2
-#     No sampling, no top-t, no candidate set. Just compute exact scores and return top-M.
-
-#     Returns:
-#       top_idx:    [B,H,Q,M] int64
-#       top_scores: [B,H,Q,M] float
-#     Uses blockwise processing over keys to avoid materializing [B,H,Q,N].
-#     """
-#     B, H, Q, L, R = q_probs.shape
-#     _, _, _L, N = key_buckets.shape
-#     assert _L == L, f"key_buckets L={_L} != q_probs L={L}"
-#     assert v_mag.shape == (B, H, N), f"v_mag shape {v_mag.shape} != {(B,H,N)}"
-#     assert allowed_bool.shape == (B, H, Q, N), f"allowed_bool shape {allowed_bool.shape} != {(B,H,Q,N)}"
-
-#     device = q_probs.device
-#     dtype = q_probs.dtype
-
-#     M = max(1, min(int(M), N))
-
-#     best_scores = torch.full((B, H, Q, M), -torch.inf, device=device, dtype=dtype)
-#     best_idx = torch.zeros((B, H, Q, M), device=device, dtype=torch.long)
-
-#     for s in range(0, N, block):
-#         e = min(N, s + block)
-#         nb = e - s
-
-#         collision_block = torch.zeros((B, H, Q, nb), device=device, dtype=dtype)
-
-#         for l in range(L):
-#             probs_l = q_probs[:, :, :, l, :]  # [B,H,Q,R]
-#             buckets_l = key_buckets[:, :, l, s:e].to(torch.long)  # [B,H,nb]
-#             idx = buckets_l.unsqueeze(2).expand(B, H, Q, nb)      # [B,H,Q,nb]
-#             collision_block += torch.gather(probs_l, dim=-1, index=idx)
-
-#         score_block = collision_block * v_mag[:, :, s:e].unsqueeze(2)  # [B,H,Q,nb]
-#         score_block = score_block.masked_fill(~allowed_bool[:, :, :, s:e], -torch.inf)
-
-#         idx_block = torch.arange(s, e, device=device, dtype=torch.long).view(1, 1, 1, nb).expand(B, H, Q, nb)
-
-#         merged_scores = torch.cat([best_scores, score_block], dim=-1)
-#         merged_idx = torch.cat([best_idx, idx_block], dim=-1)
-
-#         top = torch.topk(merged_scores, k=M, dim=-1, largest=True)
-#         best_scores = top.values
-#         best_idx = torch.gather(merged_idx, dim=-1, index=top.indices)
-
-#     return best_idx, best_scores
 
 def topk_soft_collision_scores_blockwise(
     q_probs: torch.Tensor,      # [B,H,Q,L,R] float probs (may be bf16/fp16)

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import os
 from pathlib import Path
 import sys
@@ -10,14 +9,14 @@ import torch
 # ---------------------------------------------------------------------
 # Project setup
 # ---------------------------------------------------------------------
-os.chdir("/scratch/sj157/sparse-attention-hub")
-sys.path.insert(0, "/scratch/sj157/sparse-attention-hub")
+os.chdir("") # Put your repo root path here
+sys.path.insert(0, "") 
 
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import (
     SinkMaskerConfig,
     LocalMaskerConfig,
-    BucketMaskerConfig,
+    SocketMaskerConfig,
     PQCacheConfig,
     QuestTopKMaskerConfig
 )
@@ -32,20 +31,21 @@ from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.impl
 # USER EDIT SECTION
 # =======================
 # ---------------------------------------------------------------------
-BENCHMARK_KIND = "ruler"  # "ruler" or "longbench" or "loogle"
+BENCHMARK_KIND = "longbench"  # "ruler" or "longbench" or "loogle"
 
 MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
 # MODEL_NAME = "Qwen/Qwen3-30B-A3B-Instruct-2507"
 # MODEL_NAME = "Qwen/Qwen3-4B-Instruct-2507"
 # MODEL_NAME = "meta-llama/Llama-3.2-3B-Instruct"
 # MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
-DEVICE = "cuda"
+# MODEL_NAME = "Qwen/Qwen3-8B"
 
-RESULTS_ROOT = Path("/scratch/sj157/sparse-attention-hub/test_results.softcount/llama3.2-1B")
+sys.path.insert(0, "") 
+RESULTS_ROOT = Path("") # Put your results path here
 RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
 
 METRICS_PATH = RESULTS_ROOT / "metrics.json"
-LOG_PATH = RESULTS_ROOT / "results_fwe_20pct_longbench_llama3.1-8B_fwe.txt"
+LOG_PATH = RESULTS_ROOT / "results_longbench_llama3-1b-socket-qwen-qasper.txt"
 
 MAX_REQUESTS = 100
 MAX_CONTEXT_LENGTH = 32000
@@ -59,24 +59,24 @@ RULER_DATASETS = [
     # "niah_multikey_3",
 ]
 LONGBENCH_DATASETS = [
-    'narrativeqa', 
+    # 'narrativeqa', 
     'qasper', 
-    'multifieldqa_en', 
+    # 'multifieldqa_en', 
     # 'multifieldqa_zh', 
-    'hotpotqa', 
-    '2wikimqa', 
-    'musique', 
+    # 'hotpotqa', 
+    # '2wikimqa', 
+    # 'musique', 
     # 'dureader', 
-    'gov_report', 
-    'qmsum', 
-    'multi_news', 
+    # 'gov_report', 
+    # 'qmsum', 
+    # 'multi_news', 
     # 'vcsum', 
-    'trec', 
-    'triviaqa', 
-    'samsum', 
+    # 'trec', 
+    # 'triviaqa', 
+    # 'samsum', 
     # 'lsht', 
-    'passage_count', 
-    'passage_retrieval_en', 
+    # 'passage_count', 
+    # 'passage_retrieval_en', 
     # 'passage_retrieval_zh', 
     # 'lcc', 
     # 'repobench-p', 
@@ -95,10 +95,10 @@ LONGBENCH_DATASETS = [
     # 'repobench-p_e'
 ]
 
-K_list = [12]
+K_list = [8]
 L_list = [60]
-TAU_list = [0.3, 0.4, 0.5, 0.6, 0.7]
-heavy_list = [0.02]
+TAU_list = [0.2, 0.3, 0.5, 0.7]
+heavy_list = [0.2]
 
 
 def append_result_line(K, L, heavy_size, tau, dataset_name, score_value):
@@ -141,19 +141,7 @@ def run_single(dataset_name: str, K: int, L: int, heavy_size: float, tau: float)
             masker_configs=[
                 SinkMaskerConfig(sink_size=128),
                 LocalMaskerConfig(window_size=128),
-                BucketMaskerConfig(K=K, L=L, tau=tau, heavy_size=heavy_size),
-                # PQCacheConfig(
-                #     heavy_size=0.1,
-                #     pq_group_factor=2,  # pq_sub_dim = head_dim // pq_group_factor (e.g., 128 // 2 = 64)
-                #     pq_bits=6,
-                #     kmeans_iter=10,
-                #     init_offset=128,
-                #     metric="euclidean",
-                # ),
-                # QuestTopKMaskerConfig(
-                #     heavy_size=heavy_size,
-                #     page_size=8
-                # ),
+                SocketMaskerConfig(K=K, L=L, tau=tau, heavy_size=heavy_size),
             ]
         )
 
@@ -161,8 +149,7 @@ def run_single(dataset_name: str, K: int, L: int, heavy_size: float, tau: float)
             model_name=MODEL_NAME,
             sparse_attention_config=sparse_attention_config,
             model_kwargs={"torch_dtype": torch.bfloat16},
-            generate_kwargs={"max_new_tokens": 32},
-            device=DEVICE,
+            generate_kwargs={"max_new_tokens": 32}
         )
 
         if BENCHMARK_KIND == "ruler":

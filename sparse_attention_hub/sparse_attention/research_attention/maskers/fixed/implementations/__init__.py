@@ -7,7 +7,7 @@ from .basic_fixed import (
     SinkMasker,
     SinkMaskerConfig,
 )
-from .bucket_top_k import BucketMasker, BucketMaskerConfig
+from .bucket_top_k import SocketMasker, SocketMaskerConfig
 from .double_sparsity_top_k import (
     DoubleSparsityTopKMasker,
     DoubleSparsityTopKMaskerConfig,
@@ -25,8 +25,8 @@ __all__ = [
     "OracleTopK",
     "QuestTopKMasker",
     "OracleTopPMasker",
-    "BucketMasker",
-    "BucketMaskerConfig",
+    "SocketMasker",
+    "SocketMaskerConfig",
     "PQCache",
     "HashAttentionTopKMasker",
     "DoubleSparsityTopKMasker",

@@ -4,19 +4,19 @@ import pytest
 import torch
 
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.bucket_top_k import (
-    BucketMasker,
-    BucketMaskerConfig,
+    SocketMasker,
+    SocketMaskerConfig,
 )
 from sparse_attention_hub.sparse_attention.utils.mask import Mask
 
 
 @pytest.mark.unit
-class TestBucketMaskerImplementation:
-    """Tests for BucketMasker (bucket attention)."""
+class TestSocketMaskerImplementation:
+    """Tests for SocketMasker (bucket attention)."""
 
     def test_bucket_masker_config_creation(self):
         """Config can be created and fields are set correctly."""
-        config = BucketMaskerConfig(
+        config = SocketMaskerConfig(
             heavy_size=0.05,
             K=4,
             L=2,
@@ -30,36 +30,36 @@ class TestBucketMaskerImplementation:
 
     def test_bucket_masker_config_validation(self):
         from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.bucket_top_k import (
-            BucketMasker,
-            BucketMaskerConfig,
+            SocketMasker,
+            SocketMaskerConfig,
         )
 
         msg = "K (hyperplanes) must be a positive integer"
 
         with pytest.raises(ValueError, match=re.escape(msg)):
-            config = BucketMaskerConfig(heavy_size=0.05, K=0, L=1, top_t=1)
-            BucketMasker(config)
+            config = SocketMaskerConfig(heavy_size=0.05, K=0, L=1, top_t=1)
+            SocketMasker(config)
 
         msg = "L (hash tables) must be a positive integer"
         with pytest.raises(ValueError, match=re.escape(msg)):
-            config = BucketMaskerConfig(heavy_size=0.05, K=4, L=0, top_t=1)
-            BucketMasker(config)
+            config = SocketMaskerConfig(heavy_size=0.05, K=4, L=0, top_t=1)
+            SocketMasker(config)
 
         msg = "top_t must be a positive integer"
         with pytest.raises(ValueError, match=re.escape(msg)):
-            config = BucketMaskerConfig(heavy_size=0.05, K=4, L=1, top_t=0)
-            BucketMasker(config)
+            config = SocketMaskerConfig(heavy_size=0.05, K=4, L=1, top_t=0)
+            SocketMasker(config)
 
     def test_bucket_masker_creation(self):
-        """BucketMasker can be created from config."""
-        config = BucketMaskerConfig(
+        """SocketMasker can be created from config."""
+        config = SocketMaskerConfig(
             heavy_size=0.05,
             K=4,
             L=2,
             top_t=3,
         )
-        masker = BucketMasker.create_from_config(config)
-        assert isinstance(masker, BucketMasker)
+        masker = SocketMasker.create_from_config(config)
+        assert isinstance(masker, SocketMasker)
         # Optional: check that config got attached
         assert masker.heavy_size == config.heavy_size
         assert masker.P == config.K
@@ -87,13 +87,13 @@ class TestBucketMaskerImplementation:
 
     def test_bucket_masker_basic_add_mask_shapes(self):
         """add_mask should produce a Mask with correct dense shape."""
-        config = BucketMaskerConfig(
+        config = SocketMaskerConfig(
             heavy_size=0.25,  # select about 25% of tokens
             K=4,
             L=2,
             top_t=2,
         )
-        masker = BucketMasker.create_from_config(config)
+        masker = SocketMasker.create_from_config(config)
         keys, queries, values, attention_mask, previous_mask = self._make_dummy_inputs()
 
         new_mask = masker.add_mask(
@@ -119,13 +119,13 @@ class TestBucketMaskerImplementation:
     def test_bucket_masker_respects_heavy_size_budget(self):
         """Total selected tokens per (B,H,Q) should not exceed heavy_size-based budget."""
         B, H, Q, N = 2, 4, 3, 32
-        config = BucketMaskerConfig(
+        config = SocketMaskerConfig(
             heavy_size=0.25,  # about 8 tokens out of 32
             K=4,
             L=2,
             top_t=2,
         )
-        masker = BucketMasker.create_from_config(config)
+        masker = SocketMasker.create_from_config(config)
 
         keys = torch.randn(B, H, N, 8)
         queries = torch.randn(B, H, Q, 8)
@@ -157,13 +157,13 @@ class TestBucketMaskerImplementation:
 
     def test_bucket_masker_attention_mask_boolean(self):
         """Blocked positions in a boolean attention_mask should remain masked out."""
-        config = BucketMaskerConfig(
+        config = SocketMaskerConfig(
             heavy_size=0.5,
             K=4,
             L=2,
             top_t=2,
         )
-        masker = BucketMasker.create_from_config(config)
+        masker = SocketMasker.create_from_config(config)
 
         B, H, N, Q, D = 1, 2, 16, 2, 8
         keys = torch.randn(B, H, N, D)
@@ -198,13 +198,13 @@ class TestBucketMaskerImplementation:
 
     def test_bucket_masker_attention_mask_additive(self):
         """Blocked positions in an additive mask (<0) should remain masked out."""
-        config = BucketMaskerConfig(
+        config = SocketMaskerConfig(
             heavy_size=0.5,
             K=4,
             L=2,
             top_t=2,
         )
-        masker = BucketMasker.create_from_config(config)
+        masker = SocketMasker.create_from_config(config)
 
         B, H, N, Q, D = 1, 2, 16, 2, 8
         keys = torch.randn(B, H, N, D)
@@ -238,15 +238,15 @@ class TestBucketMaskerImplementation:
         assert torch.all(tail == 0.0)
 
     def test_bucket_masker_deterministic_given_seed(self):
-        """With the same config and inputs, BucketMasker should be deterministic."""
-        config = BucketMaskerConfig(
+        """With the same config and inputs, SocketMasker should be deterministic."""
+        config = SocketMaskerConfig(
             heavy_size=0.25,
             K=4,
             L=2,
             top_t=2,
         )
-        masker1 = BucketMasker.create_from_config(config)
-        masker2 = BucketMasker.create_from_config(config)
+        masker1 = SocketMasker.create_from_config(config)
+        masker2 = SocketMasker.create_from_config(config)
 
         keys, queries, values, attention_mask, previous_mask = self._make_dummy_inputs()
 

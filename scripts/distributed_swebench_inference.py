@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 """
-Distributed SWE-Bench Inference Script
-
-This script distributes SWE-Bench inference across multiple GPUs on a single node.
-It splits instances, starts multiple servers with sparse attention, and runs parallel inference.
-
 Usage:
     python scripts/distributed_swebench_inference.py \
         --instances_file path/to/instances.txt \

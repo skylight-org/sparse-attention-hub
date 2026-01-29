@@ -21,7 +21,7 @@ Usage:
 #memmory requirements for this? on 80gb h100 am running close to memory
 
 #tested command:
-# python scripts/distributed_swebench_inference.py   --instances_file scripts/example_instances.txt   --model_name Qwen/Qwen3-Coder-30B-A3B-Instruct   --output_dir /tmp/test_distributed_output   --num_gpus 2   --base_port 4000
+# python scripts/distributed_swebench_inference.py   --instances_file scripts/example_instances.txt   --model_name openai/Qwen/Qwen3-Coder-30B-A3B-Instruct   --output_dir distributed_results/   --num_gpus 2   --base_port 4000
 
 
 import argparse
@@ -207,7 +207,7 @@ def run_inference_jobs(
             config_file,
             '--dataset', 'princeton-nlp/SWE-bench_Verified',
             '--split', 'test',
-            '--max-iterations', '100',
+            '--max-iterations', '15',
             '--workspace', 'docker',
             '--select', instances_file,
             '--output-dir', str(output_subdir.absolute()),

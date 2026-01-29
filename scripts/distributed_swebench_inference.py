@@ -20,6 +20,9 @@ Usage:
 # look into max retries flag
 #memmory requirements for this? on 80gb h100 am running close to memory
 
+#tested command:
+# python scripts/distributed_swebench_inference.py   --instances_file scripts/example_instances.txt   --model_name Qwen/Qwen3-Coder-30B-A3B-Instruct   --output_dir /tmp/test_distributed_output   --num_gpus 2   --base_port 4000
+
 
 import argparse
 import json

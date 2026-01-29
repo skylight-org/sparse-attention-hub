@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
 """
+Distributed SWE-Bench Inference Script
+
+This script distributes SWE-Bench inference across multiple GPUs on a single node.
+It splits instances, starts multiple servers with sparse attention, and runs parallel inference.
+
 Usage:
     python scripts/distributed_swebench_inference.py \
         --instances_file path/to/instances.txt \
-        --model_name Qwen/Qwen3-Coder-30B-A3B-Instruct \
+        --model_name openai/Qwen/Qwen3-Coder-30B-A3B-Instruct \
         --output_dir /path/to/output \
         --num_gpus 8 \
         --base_port 4000
 """
+
+#pd (things to look at later if we want to optimize)
+#i think we need to print the config in the terminal when we launch this, rn need to do some tail command business
+#look into slurm? but depending on optimization this could be ok
+# look into max retries flag
+#memmory requirements for this? on 80gb h100 am running close to memory
+
 
 import argparse
 import json
@@ -18,9 +30,8 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import List, Dict, Any
-import signal
-import atexit
+from typing import List, Dict, Any, Callable
+import socket
 
 
 def split_instances_file(instances_file: str, num_splits: int) -> List[str]:
@@ -31,7 +42,7 @@ def split_instances_file(instances_file: str, num_splits: int) -> List[str]:
     if not instances:
         raise ValueError(f"No instances found in {instances_file}")
 
-    # Calculate instances per split
+    #calculate nu of instances per split
     instances_per_split = len(instances) // num_splits
     remainder = len(instances) % num_splits
 
@@ -39,13 +50,13 @@ def split_instances_file(instances_file: str, num_splits: int) -> List[str]:
     start_idx = 0
 
     for i in range(num_splits):
-        # Distribute remainder across first few splits
+        #split the remainder across first few splits (ideally should just be split evenly tho)
         split_size = instances_per_split + (1 if i < remainder else 0)
         end_idx = start_idx + split_size
 
         split_instances = instances[start_idx:end_idx]
 
-        # Create temporary file for this split
+        # temporary file for this split (for each gpu)
         split_file = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
         split_file.write('\n'.join(split_instances) + '\n')
         split_file.close()
@@ -58,7 +69,7 @@ def split_instances_file(instances_file: str, num_splits: int) -> List[str]:
         with open(split_file, 'r') as f:
             count = len([line for line in f if line.strip()])
         print(f"  GPU {i}: {count} instances")
-
+    #ret split
     return split_files
 
 
@@ -77,7 +88,7 @@ def create_llm_config(base_url: str, model_name: str) -> str:
         }
     }
 
-    # Create temporary config file
+    # temporary config file
     config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
     json.dump(config, config_file, indent=2)
     config_file.close()
@@ -85,11 +96,8 @@ def create_llm_config(base_url: str, model_name: str) -> str:
     return config_file.name
 
 
-def wait_for_server(port: int, timeout: int = 60) -> bool:
+def wait_for_server(port: int, timeout: int = 120) -> bool:
     """Wait for server to be ready on given port."""
-    import socket
-    import time
-
     start_time = time.time()
     while time.time() - start_time < timeout:
         try:
@@ -116,6 +124,10 @@ def start_servers(model_name: str, num_gpus: int, base_port: int, output_dir: st
         env = os.environ.copy()
         env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 
+        # Set PYTHONPATH to ensure imports work in subprocess
+        project_root = Path(__file__).parent.parent
+        env['PYTHONPATH'] = str(project_root)
+
         print(f"Starting server for GPU {gpu_id} on port {port}...")
 
         # Start server process
@@ -133,7 +145,7 @@ def start_servers(model_name: str, num_gpus: int, base_port: int, output_dir: st
                 env=env,
                 stdout=f,
                 stderr=subprocess.STDOUT,
-                cwd=Path(__file__).parent.parent  # Project root
+                cwd=Path(__file__).parent.parent  #project root
             )
 
         servers.append(server_process)
@@ -186,6 +198,7 @@ def run_inference_jobs(
         print(f"Starting inference job for GPU {gpu_id}...")
 
         # Run inference
+        # Use absolute path for output_dir to ensure it goes exactly where we want
         cmd = [
             'uv', 'run', 'swebench-infer',
             config_file,
@@ -194,7 +207,8 @@ def run_inference_jobs(
             '--max-iterations', '100',
             '--workspace', 'docker',
             '--select', instances_file,
-            f'--note', f'gpu_{gpu_id}_run'
+            '--output-dir', str(output_subdir.absolute()),
+            '--note', f'gpu_{gpu_id}_run'
         ]
 
         with open(log_file, 'w') as f:
@@ -223,18 +237,25 @@ def collect_outputs(output_dir: str, num_gpus: int):
 
     with open(combined_output, 'w') as outfile:
         for gpu_id in range(num_gpus):
-            gpu_output = output_dir / f"gpu_{gpu_id}" / "output.jsonl"
-            if gpu_output.exists():
+            gpu_subdir = output_dir / f"gpu_{gpu_id}"
+            
+            # Find any output.jsonl file in the structured subdirectories
+            found_output = None
+            for p in gpu_subdir.glob("**/output.jsonl"):
+                found_output = p
+                break
+            
+            if found_output and found_output.exists():
                 gpu_count = 0
-                with open(gpu_output, 'r') as infile:
+                with open(found_output, 'r') as infile:
                     for line in infile:
                         outfile.write(line)
                         gpu_count += 1
-                print(f"✓ GPU {gpu_id}: {gpu_count} instances collected")
+                print(f"✓ GPU {gpu_id}: {gpu_count} instances collected (from {found_output.relative_to(output_dir)})")
                 successful_outputs += 1
                 total_instances += gpu_count
             else:
-                print(f"✗ GPU {gpu_id}: No output file found")
+                print(f"✗ GPU {gpu_id}: No output file found in {gpu_subdir}")
 
     print(f"Total instances collected: {total_instances}")
 
@@ -242,12 +263,14 @@ def collect_outputs(output_dir: str, num_gpus: int):
     cost_reports_found = 0
     with open(combined_cost, 'w') as outfile:
         for gpu_id in range(num_gpus):
-            cost_report = output_dir / f"gpu_{gpu_id}" / "cost_report.jsonl"
-            if cost_report.exists():
-                with open(cost_report, 'r') as infile:
-                    for line in infile:
-                        outfile.write(line)
-                cost_reports_found += 1
+            gpu_subdir = output_dir / f"gpu_{gpu_id}"
+            for cost_report in gpu_subdir.glob("**/cost_report.jsonl"):
+                if cost_report.exists():
+                    with open(cost_report, 'r') as infile:
+                        for line in infile:
+                            outfile.write(line)
+                    cost_reports_found += 1
+                    break
 
     if cost_reports_found > 0:
         print(f"✓ Cost reports collected from {cost_reports_found} GPUs")
@@ -339,7 +362,9 @@ def main():
     print(f"Number of GPUs: {args.num_gpus}")
     print(f"Base port: {args.base_port}")
 
-    # Track temporary files for cleanup
+    # Track processes for cleanup
+    servers = []
+    inference_jobs = []
     temp_files = []
 
     try:
@@ -350,13 +375,25 @@ def main():
 
         # Step 2: Start servers
         print("\n=== Step 2: Starting servers ===")
-        servers = start_servers(args.model_name, args.num_gpus, args.base_port, str(output_dir))
+        
+        # Strip provider prefix if present for server startup
+        # (e.g., 'openai/Qwen/...' -> 'Qwen/...')
+        server_model_name = args.model_name
+        if '/' in server_model_name:
+            parts = server_model_name.split('/')
+            # Common LiteLLM/OpenHands provider prefixes
+            if parts[0] in ['openai', 'anthropic', 'google', 'huggingface', 'litellm']:
+                server_model_name = '/'.join(parts[1:])
+                print(f"ℹ Stripped provider prefix for server startup: {server_model_name}")
+        
+        servers = start_servers(server_model_name, args.num_gpus, args.base_port, str(output_dir))
 
         # Step 3: Create LLM configs
         print("\n=== Step 3: Creating LLM configs ===")
         llm_configs = []
         for gpu_id in range(args.num_gpus):
             port = args.base_port + gpu_id
+            # OpenHands in Docker uses 172.17.0.1 to reach host on this machine(?) maybe fix globally later
             base_url = f"http://172.17.0.1:{port}/v1"
             config_file = create_llm_config(base_url, args.model_name)
             llm_configs.append(config_file)
@@ -384,7 +421,7 @@ def main():
             if all_done:
                 break
 
-            time.sleep(30)  # Check every 30 seconds
+            time.sleep(30)
 
         # Step 6: Collect outputs
         print("\n=== Step 6: Collecting outputs ===")
@@ -404,6 +441,8 @@ def main():
 
     except Exception as e:
         print(f"\nError: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
     finally:

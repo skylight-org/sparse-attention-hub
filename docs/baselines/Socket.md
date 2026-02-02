@@ -43,9 +43,12 @@ random hyperplanes.
 
 ### 3.1 Random hyperplanes
 
-For each table \( \ell \in \{ 1, \dots, L \} \), sample \( P \) random vectors:
+For each table \( \ell \in \{1,\dots,L\} \), sample \( P \) random vectors:
 
-\[ w_{ \ell,p} \sim \mathcal{N}(0, I) \]
+\[
+w_{\ell,p} \sim \mathcal{N}(0, I)
+\]
+
 
 ---
 

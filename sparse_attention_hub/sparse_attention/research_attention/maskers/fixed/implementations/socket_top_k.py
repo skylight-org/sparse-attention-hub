@@ -15,7 +15,7 @@ from sparse_attention_hub.sparse_attention.utils.kv_utils import (
 from sparse_attention_hub.sparse_attention.utils.mask import Mask
 
 from ..base import TopKMasker, TopKMaskerConfig
-from .utils.bucket_utils import (
+from .utils.socket_utils import (
     attention_mask_to_allowed_prob,
     get_hyper_planes,
     get_protos_T,

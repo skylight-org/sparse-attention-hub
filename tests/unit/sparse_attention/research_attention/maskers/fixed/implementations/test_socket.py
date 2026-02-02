@@ -3,7 +3,7 @@ import re
 import pytest
 import torch
 
-from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.bucket_top_k import (
+from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.socket_top_k import (
     SocketMasker,
     SocketMaskerConfig,
 )
@@ -29,7 +29,7 @@ class TestSocketMaskerImplementation:
         assert config.top_t == 3
 
     def test_bucket_masker_config_validation(self):
-        from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.bucket_top_k import (
+        from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.socket_top_k import (
             SocketMasker,
             SocketMaskerConfig,
         )

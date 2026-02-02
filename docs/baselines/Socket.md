@@ -54,13 +54,10 @@ w_{ℓ,p} ~ N(0, I)
 
 For key \( k_i \):
 
-\[
-z_{\ell,p}(i) = \langle k_i, w_{\ell,p} \rangle
-\]
+z_{ℓ,p}(i) = ⟨k_i, w_{ℓ,p}⟩
 
-\[
-b_{\ell,p}(i) = \mathbf{1}[z_{\ell,p}(i) \ge 0]
-\]
+b_{ℓ,p}(i) = 1[z_{ℓ,p}(i) ≥ 0]
+
 
 ---
 
@@ -68,10 +65,7 @@ b_{\ell,p}(i) = \mathbf{1}[z_{\ell,p}(i) \ge 0]
 
 The bucket ID for key \( i \) in table \( \ell \) is:
 
-\[
-\text{bucket}_\ell(i)
-= \sum_{p=1}^{P} b_{\ell,p}(i)\, 2^{P - p}
-\]
+bucket_ℓ(i) = ∑_{p=1}^{P} b_{ℓ,p}(i) · 2^{P − p}
 
 Each key belongs to **exactly one bucket per table**.
 
@@ -85,17 +79,13 @@ Queries are *soft-assigned* to all buckets using the same hyperplanes.
 
 For query \( q \):
 
-\[
-z_{\ell,p}(q) = \langle q, w_{\ell,p} \rangle
-\]
+z_{ℓ,p}(q) = ⟨q, w_{ℓ,p}⟩
 
 ---
 
 ### 4.2 Nonlinear stabilization
 
-\[
-h_{\ell,p}(q) = \tanh(z_{\ell,p}(q))
-\]
+h_{ℓ,p}(q) = tanh(z_{ℓ,p}(q))
 
 ---
 
@@ -103,27 +93,18 @@ h_{\ell,p}(q) = \tanh(z_{\ell,p}(q))
 
 All buckets correspond to vertices of a \( P \)-dimensional hypercube:
 
-\[
-c_r \in \{-1,+1\}^P, \quad r = 1,\dots,R
-\]
+c_r ∈ {−1, +1}^P,   r = 1, …, R
 
 ---
 
 ### 4.4 Bucket logits
 
-\[
-\text{logits}_{q,\ell,r}
-= \sum_{p=1}^{P} h_{\ell,p}(q)\, c_r[p]
-\]
+logits_{q,ℓ,r} = ∑_{p=1}^{P} h_{ℓ,p}(q) · c_r[p]
 
----
 
 ### 4.5 Softmax with temperature
 
-\[
-P(r \mid q, \ell)
-= \text{softmax}_r\left(\frac{\text{logits}_{q,\ell,r}}{\tau}\right)
-\]
+P(r | q, ℓ) = softmax_r(logits_{q,ℓ,r} / τ)
 
 This yields a probability distribution over buckets for each query and table.
 
@@ -138,11 +119,8 @@ Instead, it computes **soft collision scores** directly.
 
 For query \( q \) and key \( i \):
 
-\[
-C(q,i)
-= \sum_{\ell=1}^{L}
-P\big(\text{bucket}_\ell(i) \mid q, \ell\big)
-\]
+C(q, i) = ∑_{ℓ=1}^{L} P(bucket_ℓ(i) | q, ℓ)
+
 
 Interpretation:
 
@@ -158,19 +136,14 @@ incorporates value magnitude.
 
 ### 6.1 Value norm
 
-\[
-\|v_i\|_2
-= \sqrt{\sum_d v_{i,d}^2}
-\]
+‖v_i‖₂ = √(∑_d v_{i,d}²)
 
 ---
 
 ### 6.2 Final score
 
-\[
-\text{score}(q,i)
-= C(q,i) \cdot \|v_i\|_2
-\]
+score(q, i) = C(q, i) · ‖v_i‖₂
+
 
 This balances:
 
@@ -218,22 +191,17 @@ attention for long-context models.
 ```
 
 ### Experimental Setup
-Some datasets from the RULER benchmark
-
-In general, as the sparsity drops, there is a need to increase L (hash tables). 
-  - Full recovery for 20% sparsity can be done with 30-32 tables.
-  - Full recovery for 10% sparsity can be done with 50-52 tables.
-  - Full recovery for 5% sparsity can be done with 78-80 tables.
+Some datasets from the RULER benchmark.
 
 Our Results with model - meta-llama/Llama-3.1-8B-Instruct:
 
 | Dataset        | Token Budget 1600 (0.05) | Token Budget 3200 (0.10) | Token Budget 6400 (0.20) |
 |:-------------- |:------------------------:|:-------------------------:|:-------------------------:|
-| **vt**         |                |                 |         92        |
-| **fwe**        |                |                 |         93.3      |
-| **multikey_2** |                |         94        |          96       |
-| **qa_2**       |                |          56       |          58       |
-| **qa_1**       |                |          80       |          80       |
-| **multikey_3** |       94         |        100         |        100         |
+| **vt**         |        91.4        |         94.2        |         95.2        |      
+| **fwe**        |        86        |        88.7         |         91.7      |    
+| **multikey_2** |       93         |         95        |          97       |   
+| **qa_2**       |       82         |          53       |          53       |   
+| **qa_1**       |       52        |          82       |          84       |  
+| **multikey_3** |       92         |        100         |        100         |  
 
 

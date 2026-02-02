@@ -4,7 +4,6 @@ from typing import Dict, Optional, Tuple
 import torch
 
 from sparse_attention_hub.sparse_attention.research_attention.maskers.base import (
-    AttentionTensorDimensions,
     MaskerConfig,
     MaskerRegistry,
 )
@@ -33,6 +32,7 @@ class SocketMaskerConfig(TopKMaskerConfig):
       • K:      # hyperplanes per table (buckets = 2**K)
       • L:      # hash tables
       • heavy_size (inherited): output budget M
+      • tau:    temperature parameter for softmax in soft hashing
     """
 
     K: int = 4
@@ -127,7 +127,6 @@ class SocketMasker(TopKMasker):
         key_buckets = hard_hash(keys_rep, planes)  # int16 codes
 
         # 4) Soft-hash queries -> probs [B, H, Q, L, R]
-        # q_probs = soft_hash(queries, planes, protosT)  # float probs (normalized)
         q_probs = soft_hash(queries, planes, protosT, tau=self.tau)
 
         # 5) Allowed mask -> allowed_bool [B,H,Q,N]

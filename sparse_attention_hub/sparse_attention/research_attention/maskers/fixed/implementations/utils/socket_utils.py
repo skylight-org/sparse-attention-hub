@@ -1,4 +1,4 @@
-"""Bucket utility functions."""
+"""Socket utility functions."""
 
 import itertools
 import math
@@ -165,9 +165,9 @@ def topk_soft_collision_scores_blockwise(
 
         collision_block = torch.zeros((B, H, Q, nb), device=device, dtype=torch.float32)
 
-        for l in range(L):
-            probs_l = q_probs_f[:, :, :, l, :]  # [B,H,Q,R] float32
-            buckets_l = key_buckets[:, :, l, s:e].to(torch.long)  # [B,H,nb]
+        for table_idx in range(L):
+            probs_l = q_probs_f[:, :, :, table_idx, :]  # [B,H,Q,R] float32
+            buckets_l = key_buckets[:, :, table_idx, s:e].to(torch.long)  # [B,H,nb]
             idx = buckets_l.unsqueeze(2).expand(B, H, Q, nb)  # [B,H,Q,nb]
             collision_block += torch.gather(probs_l, dim=-1, index=idx)
 

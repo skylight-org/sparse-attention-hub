@@ -186,7 +186,7 @@ attention for long-context models.
   config = ResearchAttentionConfig(masker_configs=[
       SinkMaskerConfig(sink_size=128),
       LocalMaskerConfig(window_size=128),
-      BucketMaskerConfig(K=12, L=60, tau=0.3, heavy_size=0.2),
+      SocketMaskerConfig(K=12, L=60, tau=0.3, heavy_size=0.2),
   ])
 ```
 

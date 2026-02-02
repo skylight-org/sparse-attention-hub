@@ -12,9 +12,9 @@ from sparse_attention_hub.sparse_attention.utils.mask import Mask
 
 @pytest.mark.unit
 class TestSocketMaskerImplementation:
-    """Tests for SocketMasker (bucket attention)."""
+    """Tests for SocketMasker implementation."""
 
-    def test_bucket_masker_config_creation(self):
+    def test_socket_masker_config_creation(self):
         """Config can be created and fields are set correctly."""
         config = SocketMaskerConfig(
             heavy_size=0.05,
@@ -28,12 +28,7 @@ class TestSocketMaskerImplementation:
         assert config.L == 2
         assert config.tau == 0.6
 
-    def test_bucket_masker_config_validation(self):
-        from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.socket_top_k import (
-            SocketMasker,
-            SocketMaskerConfig,
-        )
-
+    def test_socket_masker_config_validation(self):
         msg = "K must be positive"
 
         with pytest.raises(ValueError, match=re.escape(msg)):
@@ -45,7 +40,7 @@ class TestSocketMaskerImplementation:
             config = SocketMaskerConfig(heavy_size=0.05, K=4, L=0, tau=0.4)
             SocketMasker(config)
 
-    def test_bucket_masker_invalid_tau_raises(self):
+    def test_socket_masker_invalid_tau_raises(self):
         """Non-positive tau should raise a ValueError during hashing."""
         config = SocketMaskerConfig(
             heavy_size=0.1,
@@ -68,7 +63,7 @@ class TestSocketMaskerImplementation:
                 previous_mask=previous_mask,
             )
 
-    def test_bucket_masker_creation(self):
+    def test_socket_masker_creation(self):
         """SocketMasker can be created from config."""
         config = SocketMaskerConfig(
             heavy_size=0.05,
@@ -103,7 +98,7 @@ class TestSocketMaskerImplementation:
         )
         return keys, queries, values, attention_mask, previous_mask
 
-    def test_bucket_masker_basic_add_mask_shapes(self):
+    def test_socket_masker_basic_add_mask_shapes(self):
         """add_mask should produce a Mask with correct dense shape."""
         config = SocketMaskerConfig(
             heavy_size=0.25,  # select about 25% of tokens
@@ -133,7 +128,7 @@ class TestSocketMaskerImplementation:
         assert dense.min() >= 0.0
         assert dense.max() <= 1.0
 
-    def test_bucket_masker_respects_heavy_size_budget(self):
+    def test_socket_masker_respects_heavy_size_budget(self):
         """Total selected tokens per (B,H,Q) should not exceed heavy_size-based budget."""
         B, H, Q, N = 2, 4, 3, 32
         config = SocketMaskerConfig(
@@ -171,7 +166,7 @@ class TestSocketMaskerImplementation:
         active_per_row = (dense > 0).sum(dim=-1)  # [B,H,Q]
         assert torch.all(active_per_row <= effective_M)
 
-    def test_bucket_masker_attention_mask_boolean(self):
+    def test_socket_masker_attention_mask_boolean(self):
         """Blocked positions in a boolean attention_mask should remain masked out."""
         config = SocketMaskerConfig(
             heavy_size=0.5,
@@ -211,7 +206,7 @@ class TestSocketMaskerImplementation:
         tail = dense[..., N // 2 :]
         assert torch.all(tail == 0.0)
 
-    def test_bucket_masker_attention_mask_additive(self):
+    def test_socket_masker_attention_mask_additive(self):
         """Blocked positions in an additive mask (<0) should remain masked out."""
         config = SocketMaskerConfig(
             heavy_size=0.5,
@@ -251,7 +246,7 @@ class TestSocketMaskerImplementation:
         tail = dense[..., N // 2 :]
         assert torch.all(tail == 0.0)
 
-    def test_bucket_masker_deterministic_given_seed(self):
+    def test_socket_masker_deterministic_given_seed(self):
         """With the same config and inputs, SocketMasker should be deterministic."""
         config = SocketMaskerConfig(
             heavy_size=0.25,

@@ -119,7 +119,7 @@ class TestSocketUtils:
 
     def test_hard_hash_simple_planes(self):
         """hard_hash should assign predictable buckets for simple planes."""
-        B, H, N, D = 1, 1, 2, 2
+        B, H, N = 1, 1, 2
         L = 1
 
         planes = torch.tensor(

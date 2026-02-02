@@ -64,7 +64,9 @@ def pack_bits(bits: torch.Tensor) -> torch.Tensor:
     returns: [...] int16
     """
     P = bits.shape[-1]
-    weights = (1 << torch.arange(P - 1, -1, -1, device=bits.device, dtype=torch.int16))  # [P]
+    weights = 1 << torch.arange(
+        P - 1, -1, -1, device=bits.device, dtype=torch.int16
+    )  # [P]
     view_shape = (*([1] * (bits.ndim - 1)), P)
     return torch.sum(bits.to(torch.int16) * weights.view(*view_shape), dim=-1)
 
@@ -102,11 +104,12 @@ def soft_hash(
     if tau <= 0:
         raise ValueError(f"tau must be > 0, got {tau}")
 
+    return F.softmax(logits / tau, dim=-1)
 
-    return F.softmax(logits/tau, dim=-1)
 
-
-def attention_mask_to_allowed_prob(attention_mask: torch.Tensor, K: int) -> torch.Tensor:
+def attention_mask_to_allowed_prob(
+    attention_mask: torch.Tensor, K: int
+) -> torch.Tensor:
     """
     Convert attention_mask to allowed-probabilities in [0,1], shape [B,1,*,K].
 
@@ -123,11 +126,12 @@ def attention_mask_to_allowed_prob(attention_mask: torch.Tensor, K: int) -> torc
         allowed = allowed.unsqueeze(1)
     return allowed
 
+
 def topk_soft_collision_scores_blockwise(
-    q_probs: torch.Tensor,      # [B,H,Q,L,R] float probs (may be bf16/fp16)
+    q_probs: torch.Tensor,  # [B,H,Q,L,R] float probs (may be bf16/fp16)
     key_buckets: torch.Tensor,  # [B,H,L,N] int bucket ids
-    v_mag: torch.Tensor,        # [B,H,N] float (any)
-    allowed_bool: torch.Tensor, # [B,H,Q,N] bool
+    v_mag: torch.Tensor,  # [B,H,N] float (any)
+    allowed_bool: torch.Tensor,  # [B,H,Q,N] bool
     M: int,
     block: int = 4096,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -150,7 +154,9 @@ def topk_soft_collision_scores_blockwise(
     q_probs_f = q_probs.float()
     v_mag_f = v_mag.float()
 
-    best_scores = torch.full((B, H, Q, M), -torch.inf, device=device, dtype=torch.float32)
+    best_scores = torch.full(
+        (B, H, Q, M), -torch.inf, device=device, dtype=torch.float32
+    )
     best_idx = torch.zeros((B, H, Q, M), device=device, dtype=torch.long)
 
     for s in range(0, N, block):
@@ -162,13 +168,17 @@ def topk_soft_collision_scores_blockwise(
         for l in range(L):
             probs_l = q_probs_f[:, :, :, l, :]  # [B,H,Q,R] float32
             buckets_l = key_buckets[:, :, l, s:e].to(torch.long)  # [B,H,nb]
-            idx = buckets_l.unsqueeze(2).expand(B, H, Q, nb)      # [B,H,Q,nb]
+            idx = buckets_l.unsqueeze(2).expand(B, H, Q, nb)  # [B,H,Q,nb]
             collision_block += torch.gather(probs_l, dim=-1, index=idx)
 
         score_block = collision_block * v_mag_f[:, :, s:e].unsqueeze(2)  # float32
         score_block = score_block.masked_fill(~allowed_bool[:, :, :, s:e], -torch.inf)
 
-        idx_block = torch.arange(s, e, device=device, dtype=torch.long).view(1, 1, 1, nb).expand(B, H, Q, nb)
+        idx_block = (
+            torch.arange(s, e, device=device, dtype=torch.long)
+            .view(1, 1, 1, nb)
+            .expand(B, H, Q, nb)
+        )
 
         merged_scores = torch.cat([best_scores, score_block], dim=-1)
         merged_idx = torch.cat([best_idx, idx_block], dim=-1)

@@ -20,13 +20,13 @@ class TestSocketMaskerImplementation:
             heavy_size=0.05,
             K=4,
             L=2,
-            top_t=3,
+            tau=0.6,
         )
         assert config is not None
         assert config.heavy_size == 0.05
         assert config.K == 4
         assert config.L == 2
-        assert config.top_t == 3
+        assert config.tau == 0.6
 
     def test_bucket_masker_config_validation(self):
         from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.socket_top_k import (
@@ -34,21 +34,39 @@ class TestSocketMaskerImplementation:
             SocketMaskerConfig,
         )
 
-        msg = "K (hyperplanes) must be a positive integer"
+        msg = "K must be positive"
 
         with pytest.raises(ValueError, match=re.escape(msg)):
-            config = SocketMaskerConfig(heavy_size=0.05, K=0, L=1, top_t=1)
+            config = SocketMaskerConfig(heavy_size=0.05, K=0, L=1, tau=0.4)
             SocketMasker(config)
 
-        msg = "L (hash tables) must be a positive integer"
+        msg = "L must be positive"
         with pytest.raises(ValueError, match=re.escape(msg)):
-            config = SocketMaskerConfig(heavy_size=0.05, K=4, L=0, top_t=1)
+            config = SocketMaskerConfig(heavy_size=0.05, K=4, L=0, tau=0.4)
             SocketMasker(config)
 
-        msg = "top_t must be a positive integer"
-        with pytest.raises(ValueError, match=re.escape(msg)):
-            config = SocketMaskerConfig(heavy_size=0.05, K=4, L=1, top_t=0)
-            SocketMasker(config)
+    def test_bucket_masker_invalid_tau_raises(self):
+        """Non-positive tau should raise a ValueError during hashing."""
+        config = SocketMaskerConfig(
+            heavy_size=0.1,
+            K=2,
+            L=1,
+            tau=0.0,
+        )
+        masker = SocketMasker.create_from_config(config)
+        keys, queries, values, attention_mask, previous_mask = self._make_dummy_inputs()
+
+        with pytest.raises(ValueError, match=r"tau must be > 0"):
+            masker.add_mask(
+                keys=keys,
+                queries=queries,
+                values=values,
+                attention_mask=attention_mask,
+                scaling=1.0,
+                dropout=0.0,
+                sparse_meta_data={},
+                previous_mask=previous_mask,
+            )
 
     def test_bucket_masker_creation(self):
         """SocketMasker can be created from config."""
@@ -56,7 +74,7 @@ class TestSocketMaskerImplementation:
             heavy_size=0.05,
             K=4,
             L=2,
-            top_t=3,
+            tau=0.4,
         )
         masker = SocketMasker.create_from_config(config)
         assert isinstance(masker, SocketMasker)
@@ -64,7 +82,7 @@ class TestSocketMaskerImplementation:
         assert masker.heavy_size == config.heavy_size
         assert masker.P == config.K
         assert masker.L == config.L
-        assert masker.top_t == config.top_t
+        assert masker.tau == config.tau
 
     def _make_dummy_inputs(self, device="cpu"):
         """Helper to create small synthetic Q/K/V + attention_mask."""
@@ -91,7 +109,6 @@ class TestSocketMaskerImplementation:
             heavy_size=0.25,  # select about 25% of tokens
             K=4,
             L=2,
-            top_t=2,
         )
         masker = SocketMasker.create_from_config(config)
         keys, queries, values, attention_mask, previous_mask = self._make_dummy_inputs()
@@ -112,7 +129,7 @@ class TestSocketMaskerImplementation:
         B, H, Q, N = 2, 4, 3, 16
         assert dense.shape == (B, H, Q, N)
 
-        # Values should be between 0 and 1 (Quest-style probabilities)
+        # Values should be between 0 and 1
         assert dense.min() >= 0.0
         assert dense.max() <= 1.0
 
@@ -123,7 +140,6 @@ class TestSocketMaskerImplementation:
             heavy_size=0.25,  # about 8 tokens out of 32
             K=4,
             L=2,
-            top_t=2,
         )
         masker = SocketMasker.create_from_config(config)
 
@@ -161,7 +177,6 @@ class TestSocketMaskerImplementation:
             heavy_size=0.5,
             K=4,
             L=2,
-            top_t=2,
         )
         masker = SocketMasker.create_from_config(config)
 
@@ -202,7 +217,6 @@ class TestSocketMaskerImplementation:
             heavy_size=0.5,
             K=4,
             L=2,
-            top_t=2,
         )
         masker = SocketMasker.create_from_config(config)
 
@@ -243,7 +257,6 @@ class TestSocketMaskerImplementation:
             heavy_size=0.25,
             K=4,
             L=2,
-            top_t=2,
         )
         masker1 = SocketMasker.create_from_config(config)
         masker2 = SocketMasker.create_from_config(config)

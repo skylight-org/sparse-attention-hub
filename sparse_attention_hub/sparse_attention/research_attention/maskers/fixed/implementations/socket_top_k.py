@@ -34,6 +34,7 @@ class SocketMaskerConfig(TopKMaskerConfig):
       • L:      # hash tables
       • heavy_size (inherited): output budget M
     """
+
     K: int = 4
     L: int = 1
     tau: float = 0.3
@@ -63,8 +64,12 @@ class SocketMasker(TopKMasker):
         self.heavy_size = config.heavy_size
         self.tau: float = float(config.tau)
 
-        self._planes_cache: Dict[Tuple[int, torch.device, torch.dtype, int, int], torch.Tensor] = {}
-        self._protos_cache: Dict[Tuple[int, torch.device, torch.dtype], torch.Tensor] = {}
+        self._planes_cache: Dict[
+            Tuple[int, torch.device, torch.dtype, int, int], torch.Tensor
+        ] = {}
+        self._protos_cache: Dict[
+            Tuple[int, torch.device, torch.dtype], torch.Tensor
+        ] = {}
 
         self._seed = 123456789
         self._rng_cache: Dict[torch.device, torch.Generator] = {}
@@ -81,9 +86,9 @@ class SocketMasker(TopKMasker):
 
     def add_mask(
         self,
-        keys: torch.Tensor,                 # [B, H_k or G, N, D]
-        queries: torch.Tensor,              # [B, H, Q, D]
-        values: torch.Tensor,               # [B, H_k or G, N, Dv]
+        keys: torch.Tensor,  # [B, H_k or G, N, D]
+        queries: torch.Tensor,  # [B, H, Q, D]
+        values: torch.Tensor,  # [B, H_k or G, N, Dv]
         attention_mask: Optional[torch.Tensor],
         scaling: float,
         dropout: float,
@@ -130,10 +135,14 @@ class SocketMasker(TopKMasker):
         # 5) Allowed mask -> allowed_bool [B,H,Q,N]
         allowed_prob = None
         if attention_mask is not None:
-            allowed_prob = attention_mask_to_allowed_prob(attention_mask, N)  # [B,1,*,N]
+            allowed_prob = attention_mask_to_allowed_prob(
+                attention_mask, N
+            )  # [B,1,*,N]
             allowed_bool = (allowed_prob > 0).expand(B, H, Q, N)
         else:
-            allowed_bool = torch.ones((B, H, Q, N), device=keys_rep.device, dtype=torch.bool)
+            allowed_bool = torch.ones(
+                (B, H, Q, N), device=keys_rep.device, dtype=torch.bool
+            )
 
         # 6) Budget M
         M = max(0, min(int(self._calculate_effective_size(self.heavy_size, N)), N))
@@ -142,8 +151,12 @@ class SocketMasker(TopKMasker):
         Km = min(M, N)
 
         # 7) Value magnitudes
-        v_rep = repeat_kv(values, _get_num_key_value_groups(queries, values))  # [B,H,N,Dv]
-        v_mag = torch.linalg.vector_norm(v_rep.float(), ord=2, dim=-1).to(q_probs.dtype)  # [B,H,N]
+        v_rep = repeat_kv(
+            values, _get_num_key_value_groups(queries, values)
+        )  # [B,H,N,Dv]
+        v_mag = torch.linalg.vector_norm(v_rep.float(), ord=2, dim=-1).to(
+            q_probs.dtype
+        )  # [B,H,N]
 
         # 8) Deterministic top-M by score_j = (sum_l p_l(bucket_l(j))) * ||v_j||
         top_idx, top_scores = topk_soft_collision_scores_blockwise(
@@ -179,7 +192,9 @@ class SocketMasker(TopKMasker):
             dense_mask = dense_mask * ap.expand_as(dense_mask)
 
         mask_shape = (B, H, Q, N)
-        return Mask.create_mask_from_dense_mask(mask_shape, dense_mask, dtype=previous_mask.dtype)
+        return Mask.create_mask_from_dense_mask(
+            mask_shape, dense_mask, dtype=previous_mask.dtype
+        )
 
     @classmethod
     def create_from_config(cls, config: MaskerConfig) -> "SocketMasker":

@@ -7,7 +7,7 @@ from .basic_fixed import (
     SinkMasker,
     SinkMaskerConfig,
 )
-from .bucket_top_k import SocketMasker, SocketMaskerConfig
+from .socket_top_k import SocketMasker, SocketMaskerConfig
 from .double_sparsity_top_k import (
     DoubleSparsityTopKMasker,
     DoubleSparsityTopKMaskerConfig,

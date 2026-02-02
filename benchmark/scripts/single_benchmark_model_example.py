@@ -1,201 +1,160 @@
-import os
-from pathlib import Path
-import sys
+#!/usr/bin/env python3
+"""
+Simple Benchmark Example
+
+A beginner-friendly example showing how to run a basic benchmark comparison
+between dense and sparse attention using the sparse-attention-hub framework.
+
+This example uses the MockBenchmark (5 simple samples) for quick demonstration:
+- Easy-to-understand reading comprehension questions
+- Short contexts (<250 words each)
+- Fast execution for testing and learning
+
+Usage:
+    python 04_simple_benchmark_example.py
+"""
+
 import json
-import itertools
-import gc
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
 import torch
 
-# ---------------------------------------------------------------------
-# Project setup
-# ---------------------------------------------------------------------
-os.chdir("") # Put your repo root path here
-sys.path.insert(0, "") 
+# Change to repository root based on script location
+repo_root: Path = Path(__file__).resolve().parents[2]
+os.chdir(repo_root)
+sys.path.insert(0, str(repo_root))
 
+from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import (
     SinkMaskerConfig,
     LocalMaskerConfig,
-    SocketMaskerConfig,
-    PQCacheConfig,
-    QuestTopKMaskerConfig
 )
+
+#from benchmark.longbench import LongBench
 from benchmark.ruler32k import Ruler32K
-from benchmark.longbench import LongBench
-from benchmark.loogle.loogle import Loogle
 from sparse_attention_hub.adapters import ModelAdapterHF
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import OracleTopKConfig
 
-# ---------------------------------------------------------------------
-# =======================
-# USER EDIT SECTION
-# =======================
-# ---------------------------------------------------------------------
-BENCHMARK_KIND = "longbench"  # "ruler" or "longbench" or "loogle"
+def compute_micro_metric_averages(micro_metrics_path: Path) -> tuple[float | None, float | None]:
+    """Compute average density and attention error from micro metrics."""
+    if not micro_metrics_path.exists():
+        return None, None
 
-MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
-# MODEL_NAME = "Qwen/Qwen3-30B-A3B-Instruct-2507"
-# MODEL_NAME = "Qwen/Qwen3-4B-Instruct-2507"
-# MODEL_NAME = "meta-llama/Llama-3.2-3B-Instruct"
-# MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
-# MODEL_NAME = "Qwen/Qwen3-8B"
+    density_values: list[float] = []
+    error_values: list[float] = []
 
-sys.path.insert(0, "") 
-RESULTS_ROOT = Path("") # Put your results path here
-RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
+    with micro_metrics_path.open("r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            record: dict[str, Any] = json.loads(line)
+            metric_name: str = str(record.get("metric", ""))
+            value = record.get("value", None)
+            if value is None:
+                continue
+            value_float: float = float(value)
+            if metric_name == "research_attention_density":
+                density_values.append(value_float)
+            elif metric_name == "research_attention_output_error":
+                error_values.append(value_float)
 
-METRICS_PATH = RESULTS_ROOT / "metrics.json"
-LOG_PATH = RESULTS_ROOT / "results_longbench_llama3-1b-socket-qwen-qasper.txt"
-
-MAX_REQUESTS = 100
-MAX_CONTEXT_LENGTH = 32000
-
-RULER_DATASETS = [
-    # "qa_1",
-    # "qa_2",
-    # "vt",
-    "fwe",
-    # "niah_multikey_2",
-    # "niah_multikey_3",
-]
-LONGBENCH_DATASETS = [
-    # 'narrativeqa', 
-    'qasper', 
-    # 'multifieldqa_en', 
-    # 'multifieldqa_zh', 
-    # 'hotpotqa', 
-    # '2wikimqa', 
-    # 'musique', 
-    # 'dureader', 
-    # 'gov_report', 
-    # 'qmsum', 
-    # 'multi_news', 
-    # 'vcsum', 
-    # 'trec', 
-    # 'triviaqa', 
-    # 'samsum', 
-    # 'lsht', 
-    # 'passage_count', 
-    # 'passage_retrieval_en', 
-    # 'passage_retrieval_zh', 
-    # 'lcc', 
-    # 'repobench-p', 
-    # 'qasper_e', 
-    # 'multifieldqa_en_e', 
-    # 'hotpotqa_e', 
-    # '2wikimqa_e', 
-    # 'gov_report_e', 
-    # 'multi_news_e', 
-    # 'trec_e', 
-    # 'triviaqa_e', 
-    # 'samsum_e', 
-    # 'passage_count_e', 
-    # 'passage_retrieval_en_e', 
-    # 'lcc_e', 
-    # 'repobench-p_e'
-]
-
-K_list = [8]
-L_list = [60]
-TAU_list = [0.2, 0.3, 0.5, 0.7]
-heavy_list = [0.2]
+    avg_density: float | None = (
+        sum(density_values) / len(density_values) if density_values else None
+    )
+    avg_error: float | None = (
+        sum(error_values) / len(error_values) if error_values else None
+    )
+    return avg_density, avg_error
 
 
-def append_result_line(K, L, heavy_size, tau, dataset_name, score_value):
-    line = f"K={K} L={L} tau={tau} heavy={heavy_size} | {dataset_name}={score_value}"
-    print(line)
-    with open(LOG_PATH, "a") as f:
-        f.write(line + "\n")
+def read_overall_score(metrics_path: Path) -> float | None:
+    """Read the overall score from a metrics.json file."""
+    if not metrics_path.exists():
+        return None
+
+    with metrics_path.open("r", encoding="utf-8") as file:
+        metrics: dict[str, Any] = json.load(file)
+
+    overall_score = metrics.get("overall_score", None)
+    if overall_score is None:
+        return None
+
+    return float(overall_score)
 
 
-def read_task_score(dataset_name: str) -> str:
-    """Robust parsing: task_scores[dataset] can be dict or scalar (works for RULER + LongBench)."""
-    if not METRICS_PATH.exists():
-        return "NaN"
-    try:
-        with open(METRICS_PATH, "r") as f:
-            metrics = json.load(f)
-        task_scores = metrics.get("task_scores", {})
-        ts = task_scores.get(dataset_name, None)
+def main() -> None:
+    """Run a basic sparse attention benchmark example."""
+    model_name: str = "Qwen/Qwen3-4B-Instruct-2507"
+    device: int = 0
+    sparse_attention_config: ResearchAttentionConfig = ResearchAttentionConfig(masker_configs=[
+        SinkMaskerConfig(sink_size=128),
+        LocalMaskerConfig(window_size=128),
+        OracleTopKConfig(heavy_size=0.2)
+    ])
+    
+    print("  ✓ Loading model...")
+     # use whichever is available
+     # flash_attention_3 is for Hopper GPU
+     # commonly flash_attention_2 is supported on other GPUs
+    adapter: ModelAdapterHF = ModelAdapterHF(
+        model_name=model_name,
+        sparse_attention_config=sparse_attention_config,
+        model_kwargs= {"torch_dtype": torch.bfloat16},
+        device=device
+    )
+    
+    #benchmark = LongBench(['passage_retrieval_en'])
+    benchmark: Ruler32K = Ruler32K(['niah_multikey_2'])
 
-        if isinstance(ts, dict) and ts:
-            return str(next(iter(ts.values())))
-        if isinstance(ts, (int, float)):
-            return str(ts)
-        return "NaN"
-    except Exception:
-        return "NaN"
-
-
-def run_single(dataset_name: str, K: int, L: int, heavy_size: float, tau: float):
-    adapter = None
-    benchmark = None
-    try:
-        print(
-            f"\n=== Dataset: {dataset_name} | "
-            f"K={K}, L={L}, tau={tau}, heavy={heavy_size} | "
-            f"BENCH={BENCHMARK_KIND} ==="
+    result_dir: Path = Path("./test_results.4B/")
+    # Remove result directory if it exists
+    if result_dir.exists() and result_dir.is_dir():
+        for file_path in result_dir.glob("*"):
+            if file_path.is_file():
+                file_path.unlink()
+            elif file_path.is_dir():
+                for sub_file in file_path.rglob("*"):
+                    if sub_file.is_file():
+                        sub_file.unlink()
+                    elif sub_file.is_dir():
+                        sub_file.rmdir()
+                file_path.rmdir()
+        result_dir.rmdir()
+    result_dir.mkdir(exist_ok=True)
+    metric_logger: MicroMetricLogger = MicroMetricLogger()
+    metric_logger.configure_logging(
+            log_path=result_dir,
+            enabled_metrics=[
+                "research_attention_density",
+                "research_attention_output_error",
+            ],
         )
+    metric_logger.flush()
+    benchmark.run_benchmark(adapter, result_dir, request_kwargs={"max_requests": 5, "max_context_length": 32000}, generation_kwargs={"max_new_tokens": 20})
 
-        sparse_attention_config = ResearchAttentionConfig(
-            masker_configs=[
-                SinkMaskerConfig(sink_size=128),
-                LocalMaskerConfig(window_size=128),
-                SocketMaskerConfig(K=K, L=L, tau=tau, heavy_size=heavy_size),
-            ]
-        )
+    micro_metrics_path: Path = result_dir / "micro_metrics.jsonl"
+    avg_density, avg_error = compute_micro_metric_averages(micro_metrics_path)
+    if avg_density is not None:
+        print(f"Average density: {avg_density:.6f}")
+    else:
+        print("Average density: n/a (micro_metrics.jsonl missing or empty)")
+    if avg_error is not None:
+        print(f"Average error: {avg_error:.6f}")
+    else:
+        print("Average error: n/a (micro_metrics.jsonl missing or empty)")
 
-        adapter = ModelAdapterHF(
-            model_name=MODEL_NAME,
-            sparse_attention_config=sparse_attention_config,
-            model_kwargs={"torch_dtype": torch.bfloat16},
-            generate_kwargs={"max_new_tokens": 32}
-        )
-
-        if BENCHMARK_KIND == "ruler":
-            benchmark = Ruler32K([dataset_name])
-        elif BENCHMARK_KIND == "longbench":
-            benchmark = LongBench([dataset_name])
-        elif BENCHMARK_KIND == "loogle":
-            benchmark = Loogle(subsets_to_run=["shortdep_qa"])
-        else:
-            raise ValueError(
-                f"BENCHMARK_KIND must be 'ruler' or 'longbench', got {BENCHMARK_KIND!r}"
-            )
-
-        benchmark.run_benchmark(
-            adapter,
-            RESULTS_ROOT,
-            request_kwargs={"max_requests": MAX_REQUESTS, "max_context_length": MAX_CONTEXT_LENGTH},
-        )
-
-        score_value = read_task_score(dataset_name)
-        append_result_line(K, L, heavy_size, tau, dataset_name, score_value)
-
-    finally:
-        del benchmark
-        del adapter
-        gc.collect()
-        torch.cuda.empty_cache()
-
-
-def main():
-    if LOG_PATH.exists():
-        LOG_PATH.unlink()
-
-    DATASETS = RULER_DATASETS if BENCHMARK_KIND == "ruler" else LONGBENCH_DATASETS
-
-    for ds in DATASETS:
-        if not ds:
-            continue
-
-        print("\n\n============================")
-        print(f"### DATASET: {ds}")
-        print("============================")
-
-        for K, L, heavy_size, tau in itertools.product(K_list, L_list, heavy_list, TAU_list):
-            run_single(ds, K, L, heavy_size, tau)
-
-
+    metrics_path: Path = result_dir / "metrics.json"
+    overall_score: float | None = read_overall_score(metrics_path)
+    if overall_score is not None:
+        print(f"Overall score: {overall_score:.6f}")
+    else:
+        print("Overall score: n/a (overall_score missing)")
+    
 if __name__ == "__main__":
-    main()
+    main() 

@@ -99,8 +99,6 @@ class SocketMasker(TopKMasker):
         if previous_mask.is_full_mask():
             return previous_mask
 
-        dims: AttentionTensorDimensions = self._extract_tensor_dimensions(keys, queries)
-
         # 1) Align KV to MHA heads if grouped (GQA/MQA)
         ngroups = _get_num_key_value_groups(queries, keys)
         keys_rep = repeat_kv(keys, ngroups)  # [B, H, N, D]

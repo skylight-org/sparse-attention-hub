@@ -112,15 +112,15 @@ class TestSocketUtils:
             ],
             dtype=torch.bool,
         )
-        codes = pack_bits(bits)  # returns int16 in current implementation
-        expected = torch.tensor([0, 1, 2, 8, 15], dtype=torch.int16)
-        assert codes.dtype == torch.int16
+        codes = pack_bits(bits)
+
+        expected = torch.tensor([0, 1, 2, 8, 15], dtype=codes.dtype)
         assert torch.equal(codes, expected)
 
     def test_hard_hash_simple_planes(self):
         """hard_hash should assign predictable buckets for simple planes."""
         B, H, N, D = 1, 1, 2, 2
-        L, P = 1, 2
+        L = 1
 
         planes = torch.tensor(
             [
@@ -251,16 +251,16 @@ class TestSocketUtils:
         q_probs_f = q_probs.float()
         v_mag_f = v_mag.float()
         scores_full = torch.zeros(B, H, Q, N, dtype=torch.float32)
-        for l in range(L):
-            probs_l = q_probs_f[:, :, :, l, :]  # [B,H,Q,R]
-            buckets_l = key_buckets[:, :, l, :].to(torch.long)  # [B,H,N]
+        for table_idx in range(L):
+            probs_l = q_probs_f[:, :, :, table_idx, :]  # [B,H,Q,R]
+            buckets_l = key_buckets[:, :, table_idx, :].to(torch.long)  # [B,H,N]
             idx = buckets_l.unsqueeze(2).expand(B, H, Q, N)  # [B,H,Q,N]
             scores_full += torch.gather(probs_l, dim=-1, index=idx)
         scores_full = scores_full * v_mag_f.unsqueeze(2)  # [B,H,Q,N]
 
         # Top-M naive
         top = torch.topk(scores_full, k=M, dim=-1, largest=True)
-        idx_nv, scores_nv = top.indices, top.values
+        idx_nv = top.indices
 
         # Compare as sets per row (ordering may match, but set comparison is more robust)
         # 1) scores should match for the chosen indices

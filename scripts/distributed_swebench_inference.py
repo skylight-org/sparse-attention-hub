@@ -202,12 +202,17 @@ def run_inference_jobs(
 
         # Run inference
         # Use absolute path for output_dir to ensure it goes exactly where we want
+        env = os.environ.copy()
+        env['LITELLM_TIMEOUT'] = '1800'
+        
         cmd = [
             'uv', 'run', 'swebench-infer',
             config_file,
             '--dataset', 'princeton-nlp/SWE-bench_Verified',
             '--split', 'test',
-            '--max-iterations', '15',
+            '--max-iterations', '75',
+            '--max-attempts', '1',
+            '--max-retries', '0',
             '--workspace', 'docker',
             '--select', instances_file,
             '--output-dir', str(output_subdir.absolute()),
@@ -217,6 +222,7 @@ def run_inference_jobs(
         with open(log_file, 'w') as f:
             inference_process = subprocess.Popen(
                 cmd,
+                env=env,
                 stdout=f,
                 stderr=subprocess.STDOUT,
                 cwd=Path(__file__).parent.parent / 'benchmarks'  # benchmarks directory
@@ -396,8 +402,8 @@ def main():
         llm_configs = []
         for gpu_id in range(args.num_gpus):
             port = args.base_port + gpu_id
-            # OpenHands in Docker uses 172.17.0.1 to reach host on this machine(?) maybe fix globally later
-            base_url = f"http://172.17.0.1:{port}/v1"
+            # OpenHands in Docker uses 169.229.48.124 to reach host on this machine(?) maybe fix globally later
+            base_url = f"http://169.229.48.124:{port}/v1"
             config_file = create_llm_config(base_url, args.model_name)
             llm_configs.append(config_file)
             temp_files.append(config_file)

@@ -62,17 +62,11 @@ SPARSE_CONFIG: Optional[ResearchAttentionConfig] = ResearchAttentionConfig(
     masker_configs=[
         SinkMaskerConfig(sink_size=128),
         LocalMaskerConfig(window_size=128),
-        OracleTopKConfig(heavy_size=0.1),
-        AdaptiveSamplingMaskerConfig(
-            base_rate_sampling=0.05,
-            epsilon=0.1,
-            delta=0.1,
-            init_offset=128,
-            local_offset=128,
-        ),
+        OracleTopKConfig(heavy_size=0.1921875),
     ]
 )
 
+#SPARSE_CONFIG = None
 # ==============================================================================
 
 # Global to track turns for warmup phase

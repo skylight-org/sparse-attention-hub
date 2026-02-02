@@ -42,30 +42,32 @@ Each key is deterministically assigned to **one bucket per hash table** using
 random hyperplanes.
 
 ### 3.1 Random hyperplanes
+For each table $\ell \in \{1,\dots,L\}$, sample $P$ random vectors:
 
-For each table ℓ ∈ {1, …, L}, sample P random vectors:
-
-w_{ℓ,p} ~ N(0, I)
+$$
+\mathbf{w}_{\ell,p} \sim \mathcal{N}(0, I).
+$$
 
 
 ---
 
 ### 3.2 Projection and sign bits
 
-For key \( k_i \):
+For key $k_i$:
 
-z_{ℓ,p}(i) = ⟨k_i, w_{ℓ,p}⟩
+$z_{\ell,p}(i) = \langle k_i, w_{\ell,p} \rangle$
 
-b_{ℓ,p}(i) = 1[z_{ℓ,p}(i) ≥ 0]
+$b_{\ell,p}(i) = \mathbb{1}[z_{\ell,p}(i) \ge 0]$
+
 
 
 ---
 
 ### 3.3 Bucket index (big-endian encoding)
 
-The bucket ID for key \( i \) in table \( \ell \) is:
+The bucket ID for key $i$ in table $\ell$ is given by
 
-bucket_ℓ(i) = ∑_{p=1}^{P} b_{ℓ,p}(i) · 2^{P − p}
+$B_{\ell}(i) = \sum_{p=1}^{P} b_{\ell,p}(i)\, 2^{P-p}$.
 
 Each key belongs to **exactly one bucket per table**.
 
@@ -77,34 +79,35 @@ Queries are *soft-assigned* to all buckets using the same hyperplanes.
 
 ### 4.1 Query projection
 
-For query \( q \):
+For query $q$:
 
-z_{ℓ,p}(q) = ⟨q, w_{ℓ,p}⟩
+$z_{\ell,p}(q) = \langle q, w_{\ell,p} \rangle$
+
 
 ---
 
 ### 4.2 Nonlinear stabilization
 
-h_{ℓ,p}(q) = tanh(z_{ℓ,p}(q))
+$h_{\ell,p}(q) = \tanh(z_{\ell,p}(q))$
 
 ---
 
 ### 4.3 Hypercube corners
 
-All buckets correspond to vertices of a \( P \)-dimensional hypercube:
+All buckets correspond to vertices of a $P$-dimensional hypercube:
 
-c_r ∈ {−1, +1}^P,   r = 1, …, R
+$c_r \in \{-1, +1\}^P,\; r = 1,\dots,R$
 
 ---
 
 ### 4.4 Bucket logits
 
-logits_{q,ℓ,r} = ∑_{p=1}^{P} h_{ℓ,p}(q) · c_r[p]
+$\ell_{q,\ell,r} = \sum_{p=1}^{P} h_{\ell,p}(q)\, c_r[p]$
 
 
 ### 4.5 Softmax with temperature
 
-P(r | q, ℓ) = softmax_r(logits_{q,ℓ,r} / τ)
+$P(r \mid q, \ell) \propto \exp(\text{logits}_{q,\ell,r} / \tau)$
 
 This yields a probability distribution over buckets for each query and table.
 
@@ -117,9 +120,9 @@ Instead, it computes **soft collision scores** directly.
 
 ### 5.1 Soft collision count
 
-For query \( q \) and key \( i \):
+For query $q$ and key $i$:
 
-C(q, i) = ∑_{ℓ=1}^{L} P(bucket_ℓ(i) | q, ℓ)
+$C(q, i) = \sum_{\ell=1}^{L} P(B_{\ell}(i) \mid q, \ell)$
 
 
 Interpretation:
@@ -136,13 +139,14 @@ incorporates value magnitude.
 
 ### 6.1 Value norm
 
-‖v_i‖₂ = √(∑_d v_{i,d}²)
+$\lVert v_i \rVert_2 = \sqrt{\sum_d v_{i,d}^2}$
+
 
 ---
 
 ### 6.2 Final score
 
-score(q, i) = C(q, i) · ‖v_i‖₂
+$s(q, i) = C(q, i)\, \|v_i\|_2$
 
 
 This balances:

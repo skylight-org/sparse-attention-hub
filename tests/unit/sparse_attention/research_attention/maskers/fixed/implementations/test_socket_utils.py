@@ -1,19 +1,19 @@
 import pytest
 import torch
 
-from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.utils.bucket_utils import (
+from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.utils.socket_utils import (
     attention_mask_to_allowed_prob,
-    get_collision_counts,
     get_hyper_planes,
     get_protos_T,
     hard_hash,
     pack_bits,
     soft_hash,
+    topk_soft_collision_scores_blockwise,
 )
 
 
 @pytest.mark.unit
-class TestBucketUtils:
+class TestSocketUtils:
     def test_get_hyper_planes_basic(self):
         """get_hyper_planes returns correctly-shaped, cached tensors."""
         cache = {}
@@ -79,7 +79,7 @@ class TestBucketUtils:
         assert len(cache) == 1
 
         # All entries must be ±1
-        assert torch.all(torch.isin(protos1, torch.tensor([-1.0, 1.0])))
+        assert torch.all(torch.isin(protos1, torch.tensor([-1.0, 1.0], device=device)))
 
         # Same key -> cached
         protos2 = get_protos_T(
@@ -102,7 +102,6 @@ class TestBucketUtils:
 
     def test_pack_bits_known_values(self):
         """pack_bits should pack bit patterns into integers in big-endian order."""
-        # bits: [..., P]
         bits = torch.tensor(
             [
                 [0, 0, 0, 0],  # 0
@@ -113,28 +112,29 @@ class TestBucketUtils:
             ],
             dtype=torch.bool,
         )
-        codes = pack_bits(bits)  # [5]
-        expected = torch.tensor([0, 1, 2, 8, 15], dtype=torch.int64)
+        codes = pack_bits(bits)  # returns int16 in current implementation
+        expected = torch.tensor([0, 1, 2, 8, 15], dtype=torch.int16)
+        assert codes.dtype == torch.int16
         assert torch.equal(codes, expected)
 
     def test_hard_hash_simple_planes(self):
-        """hard_hash should assign the same buckets for identical inputs and respect planes."""
-        # Use simple deterministic planes so behavior is predictable
-        B, H, N, _ = 1, 1, 2, 2
-        L, _ = 1, 2
+        """hard_hash should assign predictable buckets for simple planes."""
+        B, H, N, D = 1, 1, 2, 2
+        L, P = 1, 2
 
-        # Planes: identity-like projections
         planes = torch.tensor(
             [
                 [  # table 0
                     [1.0, 0.0],  # hyperplane 0
                     [0.0, 1.0],  # hyperplane 1
                 ]
-            ]
+            ],
+            dtype=torch.float32,
         )  # [L,P,D]
 
-        # Two keys: [1,1] and [-1,-1]
-        keys = torch.tensor([[[[1.0, 1.0], [-1.0, -1.0]]]])  # [B,H,N,D]
+        keys = torch.tensor(
+            [[[[1.0, 1.0], [-1.0, -1.0]]]], dtype=torch.float32
+        )  # [B,H,N,D]
 
         codes = hard_hash(keys, planes)  # [B,H,L,N]
         assert codes.shape == (B, H, L, N)
@@ -145,8 +145,7 @@ class TestBucketUtils:
         assert codes[0, 0, 0, 1].item() == 0
 
         # Identical keys => identical codes
-        keys2 = keys.clone()
-        codes2 = hard_hash(keys2, planes)
+        codes2 = hard_hash(keys.clone(), planes)
         assert torch.equal(codes, codes2)
 
     def test_soft_hash_shapes_and_probs(self):
@@ -165,95 +164,40 @@ class TestBucketUtils:
             dtype=queries.dtype,
         )  # [P,R]
 
-        q_probs = soft_hash(queries, planes, protos_T)  # [B,H,Q,L,R]
+        q_probs = soft_hash(queries, planes, protos_T, tau=0.7)  # [B,H,Q,L,R]
         assert q_probs.shape == (B, H, Q, L, R)
 
-        # Probabilities should be non-negative and sum to ~1 along R
         assert torch.all(q_probs >= 0)
         probs_sum = q_probs.sum(dim=-1)  # [B,H,Q,L]
         assert torch.allclose(
             probs_sum, torch.ones_like(probs_sum), atol=1e-5, rtol=1e-5
         )
 
-    def test_get_collision_counts_tiny_example(self):
-        """get_collision_counts should correctly compute candidate_mask and collision_counts."""
-        # Small hand-constructed example
-        # B=1,H=1,L=2,N=3, Q=2, top_t=1
-        # Table 0 buckets: [0, 1, 2]
-        # Table 1 buckets: [1, 1, 0]
-        key_buckets = torch.tensor(
-            [
-                [  # B
-                    [  # H
-                        [0, 1, 2],  # L=0
-                        [1, 1, 0],  # L=1
-                    ]
-                ]
-            ]
-        )  # [1,1,2,3] => [B,H,L,N]
-
-        # For q0: in table 0 pick bucket 1, in table 1 pick bucket 0
-        # For q1: in table 0 pick bucket 2, in table 1 pick bucket 1
-        top_buckets = torch.tensor(
-            [
-                [
-                    [
-                        [
-                            [1],  # q0, L=0
-                            [0],  # q0, L=1
-                        ],
-                        [
-                            [2],  # q1, L=0
-                            [1],  # q1, L=1
-                        ],
-                    ]
-                ]
-            ]
-        )  # shape: [1, 1, 2, 2, 1]
-
-        candidate_mask, collision_counts = get_collision_counts(
-            key_buckets, top_buckets
+    def test_soft_hash_invalid_tau_raises(self):
+        """soft_hash should raise for tau <= 0."""
+        B, H, Q, D = 1, 1, 2, 4
+        L, P = 1, 2
+        queries = torch.randn(B, H, Q, D)
+        planes = torch.randn(L, P, D)
+        protos_T = get_protos_T(
+            cache={}, P=P, device=queries.device, dtype=queries.dtype
         )
-        # Shapes
-        assert candidate_mask.shape == (1, 1, 2, 3)
-        assert collision_counts.shape == (1, 1, 2, 3)
 
-        # Let's reason expected collisions:
-        # keys indices: i=0,1,2
-
-        # q0:
-        #  table 0 bucket=1 -> matches key1 only
-        #  table 1 bucket=0 -> matches key2 only
-        # => collisions(q0) = [0,1,1]
-        expected_coll_q0 = torch.tensor([0, 1, 1])
-
-        # q1:
-        #  table 0 bucket=2 -> matches key2 only
-        #  table 1 bucket=1 -> matches key0? no, key0=1 in T1? actually T1: [1,1,0]
-        #   -> matches key0 and key1
-        # => collisions(q1) = [1,1,1]  (key2 matched in table0 only)
-        expected_coll_q1 = torch.tensor([1, 1, 1])
-
-        assert torch.equal(collision_counts[0, 0, 0], expected_coll_q0)
-        assert torch.equal(collision_counts[0, 0, 1], expected_coll_q1)
-
-        # candidate_mask is True where collisions > 0
-        assert torch.equal(candidate_mask, collision_counts > 0)
+        with pytest.raises(ValueError, match=r"tau must be > 0"):
+            _ = soft_hash(queries, planes, protos_T, tau=0.0)
 
     def test_attention_mask_to_allowed_prob_bool(self):
         """attention_mask_to_allowed_prob for boolean masks."""
         B, K = 2, 5
-        # True = blocked, False = allowed
         attention_mask = torch.tensor(
             [
                 [[False, False, True, True, False]],
                 [[True, False, True, False, False]],
             ],
             dtype=torch.bool,
-        )  # [B,1,K] or [B,*,K]
+        )  # [B,1,K] (dim=3 -> will be unsqueezed to [B,1,1,K])
 
         allowed_prob = attention_mask_to_allowed_prob(attention_mask, K)
-        # expected: allowed_prob = 1 where False, 0 where True
         expected = (~attention_mask).to(torch.float32).unsqueeze(1)  # [B,1,1,K]
         assert allowed_prob.shape == (B, 1, 1, K)
         assert torch.equal(allowed_prob, expected)
@@ -261,12 +205,108 @@ class TestBucketUtils:
     def test_attention_mask_to_allowed_prob_additive(self):
         """attention_mask_to_allowed_prob for additive (float) masks."""
         B, K = 1, 4
-        # >=0 => allowed (1.0), <0 => forbidden (0.0)
         attention_mask = torch.tensor([[[0.0, 1.0, -1e9, -0.5]]])  # [B,1,K]
 
         allowed_prob = attention_mask_to_allowed_prob(attention_mask, K)
         assert allowed_prob.shape == (B, 1, 1, K)
 
-        # positions 0,1 >=0 => 1.0; positions 2,3 <0 => 0.0
         expected = torch.tensor([[[[1.0, 1.0, 0.0, 0.0]]]])
         assert torch.equal(allowed_prob, expected)
+
+    def test_topk_soft_collision_scores_blockwise_matches_naive(self):
+        """
+        Compare topk_soft_collision_scores_blockwise against a naive full-score implementation
+        on a small example.
+        """
+        torch.manual_seed(0)
+        B, H, Q, L, P = 1, 2, 3, 2, 3
+        R = 1 << P
+        N = 16
+        M = 5
+
+        # Random q_probs, normalize over R
+        q_probs = torch.rand(B, H, Q, L, R)
+        q_probs = q_probs / q_probs.sum(dim=-1, keepdim=True)
+
+        # Random buckets in [0, R)
+        key_buckets = torch.randint(low=0, high=R, size=(B, H, L, N), dtype=torch.int16)
+
+        # Value magnitudes (positive)
+        v_mag = torch.rand(B, H, N) + 0.1
+
+        # Allow all
+        allowed_bool = torch.ones(B, H, Q, N, dtype=torch.bool)
+
+        # Blockwise result
+        idx_blk, scores_blk = topk_soft_collision_scores_blockwise(
+            q_probs=q_probs,
+            key_buckets=key_buckets,
+            v_mag=v_mag,
+            allowed_bool=allowed_bool,
+            M=M,
+            block=7,  # small block to exercise multi-block path
+        )
+
+        # Naive full computation (float32 for stability, like the kernel)
+        q_probs_f = q_probs.float()
+        v_mag_f = v_mag.float()
+        scores_full = torch.zeros(B, H, Q, N, dtype=torch.float32)
+        for l in range(L):
+            probs_l = q_probs_f[:, :, :, l, :]  # [B,H,Q,R]
+            buckets_l = key_buckets[:, :, l, :].to(torch.long)  # [B,H,N]
+            idx = buckets_l.unsqueeze(2).expand(B, H, Q, N)  # [B,H,Q,N]
+            scores_full += torch.gather(probs_l, dim=-1, index=idx)
+        scores_full = scores_full * v_mag_f.unsqueeze(2)  # [B,H,Q,N]
+
+        # Top-M naive
+        top = torch.topk(scores_full, k=M, dim=-1, largest=True)
+        idx_nv, scores_nv = top.indices, top.values
+
+        # Compare as sets per row (ordering may match, but set comparison is more robust)
+        # 1) scores should match for the chosen indices
+        # 2) indices should match (as a set)
+        for b in range(B):
+            for h in range(H):
+                for q in range(Q):
+                    s1 = set(idx_blk[b, h, q].tolist())
+                    s2 = set(idx_nv[b, h, q].tolist())
+                    assert s1 == s2
+
+                    # Scores at those indices should match closely
+                    # (kernel uses iterative merge topk but should be exact for deterministic math)
+                    gathered_nv = scores_full[b, h, q, idx_blk[b, h, q]].sort().values
+                    gathered_blk = scores_blk[b, h, q].sort().values
+                    assert torch.allclose(
+                        gathered_blk, gathered_nv, atol=1e-6, rtol=1e-6
+                    )
+
+    def test_topk_soft_collision_scores_respects_allowed_bool(self):
+        """Ensure disallowed positions are never returned in top indices."""
+        torch.manual_seed(0)
+        B, H, Q, L, P = 1, 1, 1, 2, 2
+        R = 1 << P
+        N = 8
+        M = 4
+
+        q_probs = torch.rand(B, H, Q, L, R)
+        q_probs = q_probs / q_probs.sum(dim=-1, keepdim=True)
+
+        key_buckets = torch.randint(low=0, high=R, size=(B, H, L, N), dtype=torch.int16)
+        v_mag = torch.ones(B, H, N)
+
+        allowed_bool = torch.ones(B, H, Q, N, dtype=torch.bool)
+        allowed_bool[..., -3:] = False  # forbid last 3 keys
+
+        idx, scores = topk_soft_collision_scores_blockwise(
+            q_probs=q_probs,
+            key_buckets=key_buckets,
+            v_mag=v_mag,
+            allowed_bool=allowed_bool,
+            M=M,
+            block=16,
+        )
+
+        # No index may be in the forbidden range
+        assert torch.all(idx < (N - 3))
+        # Scores should be finite (since enough allowed exist)
+        assert torch.all(torch.isfinite(scores))

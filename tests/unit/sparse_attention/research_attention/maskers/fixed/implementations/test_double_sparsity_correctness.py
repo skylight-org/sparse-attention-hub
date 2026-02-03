@@ -132,7 +132,8 @@ def get_custom_attention_function(sparse_attention: SparseAttention) -> Callable
 
 @pytest.fixture
 def test_config() -> LlamaConfig:
-    config = LlamaConfig(
+    """Create a test Llama configuration matching Llama-3.1-8B-Instruct dimensions."""
+    return LlamaConfig(
         vocab_size=128256,
         hidden_size=4096,
         intermediate_size=14336,
@@ -140,21 +141,10 @@ def test_config() -> LlamaConfig:
         num_attention_heads=32,
         num_key_value_heads=8,
         max_position_embeddings=131072,
+        rope_theta=500000.0,
         attention_dropout=0.0,
         attention_bias=False,
     )
-
-    # v5+ canonical
-    config.rope_parameters = {"rope_type": "default", "rope_theta": 500000.0}
-
-    # best-effort back-compat for old code that reads config.rope_theta
-    try:
-        config.rope_theta = 500000.0
-    except Exception:
-        pass
-
-    return config
-
 
 
 @pytest.fixture(params=TEST_CONFIGS)

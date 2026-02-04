@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Optional, Tuple, Type, TypeVar, Union
 
 import torch
 
@@ -205,6 +205,4 @@ class ResearchMasker(ABC):
             type(config)
         )
 
-        # Cast to help mypy understand the type
-        masker_class = cast(Type[ResearchMasker], masker_class)
         return masker_class.create_from_config(config)

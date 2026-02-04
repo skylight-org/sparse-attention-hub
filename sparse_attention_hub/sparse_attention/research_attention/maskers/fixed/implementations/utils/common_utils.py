@@ -24,6 +24,6 @@ def pseudo_quantize(tensor: torch.Tensor, q_bit: int) -> torch.Tensor:
     scale = max_quant / range_val
     quantized = torch.round((tensor - min_val) * scale).clamp(0, max_quant)
 
-    dequantized = quantized / scale + min_val
+    dequantized: torch.Tensor = quantized / scale + min_val
 
     return dequantized

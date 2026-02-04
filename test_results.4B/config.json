@@ -1,0 +1,51 @@
+{
+  "model_kwargs": {
+    "torch_dtype": "auto",
+    "attn_implementation": "kernels-community/vllm-flash-attn3",
+    "device_map": "auto"
+  },
+  "tokenizer_kwargs": {},
+  "sparse_attention_config": {
+    "masker_configs": [
+      {
+        "sink_size": 128,
+        "search_space": {}
+      },
+      {
+        "window_size": 128,
+        "search_space": {}
+      },
+      {
+        "heavy_size": 0.2,
+        "search_space": {
+          "heavy_size": {
+            "grid_search": [
+              0.01,
+              0.02,
+              0.03,
+              0.04,
+              0.05,
+              0.06,
+              0.07,
+              0.08,
+              0.09,
+              0.1
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "generation_kwargs": {
+    "max_new_tokens": 20
+  },
+  "request_kwargs": {
+    "max_requests": 50,
+    "max_context_length": 32000
+  },
+  "benchmark_name": "ruler32k",
+  "subsets_to_run": [
+    "qa_1"
+  ],
+  "huggingface_dataset_id": "xAlg-AI/att-hub-ruler-32k"
+}

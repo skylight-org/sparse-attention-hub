@@ -82,8 +82,9 @@ class DoubleSparsityTopKMasker(TopKMasker):
     ) -> None:
         """Ensure sorted channel is loaded for the given layer."""
         if self.sorted_channel is None:
+            config: DoubleSparsityTopKMaskerConfig = self.config  # type: ignore[assignment]
             self.sorted_channels = load_sorted_channels_from_file(
-                self.config.sorted_channel_file
+                config.sorted_channel_file
             )
             self.sorted_channel = extract_layer_channels(
                 self.sorted_channels, layer_idx, self.channel_selection, device
@@ -196,7 +197,10 @@ class DoubleSparsityTopKMasker(TopKMasker):
         """Add double sparsity top-K mask to attention computation."""
         # Validate inputs
 
-        layer_idx: Optional[int] = kwargs.get("layer_idx")
+        layer_idx_raw: Any = kwargs.get("layer_idx")
+        layer_idx: Optional[int] = (
+            layer_idx_raw if isinstance(layer_idx_raw, int) else None
+        )
         if layer_idx is None:
             raise ValueError("layer_idx must be provided in kwargs")
 

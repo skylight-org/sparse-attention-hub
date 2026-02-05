@@ -13,10 +13,28 @@
 
 models:
   mistralai/Ministral-3-8B-Instruct-2512:
-    model_class: Mistral3ForConditionalGeneration
+    model_class: transformers.models.mistral3.modeling_mistral3.Mistral3ForConditionalGeneration
     default_model_kwargs:
       device_map: auto
       quantization_config:
-        constructor: FineGrainedFP8Config
+        constructor: transformers.FineGrainedFP8Config
+        kwargs:
+          dequantize: true
+
+  mistralai/Ministral-3-3B-Instruct-2512:
+    model_class: transformers.models.mistral3.modeling_mistral3.Mistral3ForConditionalGeneration
+    default_model_kwargs:
+      device_map: auto
+      quantization_config:
+        constructor: transformers.FineGrainedFP8Config
+        kwargs:
+          dequantize: true
+
+  mistralai/Ministral-3-14B-Instruct-2512:
+    model_class: transformers.models.mistral3.modeling_mistral3.Mistral3ForConditionalGeneration
+    default_model_kwargs:
+      device_map: auto
+      quantization_config:
+        constructor: transformers.FineGrainedFP8Config
         kwargs:
           dequantize: true

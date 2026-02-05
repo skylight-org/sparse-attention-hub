@@ -4,7 +4,7 @@ import gc
 from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, Mistral3ForConditionalGeneration
 
 from ..utils.config import ModelServerConfig
 from ..utils.exceptions import (
@@ -86,7 +86,7 @@ class ModelServerHF(ModelServer):
             if registry_path:
                 registry = self._get_model_registry()
                 entry = registry.get(model_name)
-
+                
                 if entry is None:
                     self.logger.warning(
                         f"Model '{model_name}' is not registered in the model registry at "
@@ -168,7 +168,7 @@ class ModelServerHF(ModelServer):
         Args:
             tokenizer_name: Name of the HuggingFace tokenizer to create
             tokenizer_kwargs: Additional tokenizer creation arguments
-
+                                    model = model_cls.from_pretrained(model_name, **effective_kwargs)
         Returns:
             Created HuggingFace tokenizer instance
 

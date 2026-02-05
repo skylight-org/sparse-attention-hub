@@ -38,6 +38,7 @@ from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.impl
 #from benchmark.longbench import LongBench
 from benchmark.ruler32k import Ruler32K
 from sparse_attention_hub.adapters import ModelAdapterHF
+from sparse_attention_hub.adapters.utils.config import ModelServerConfig
 from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations import OracleTopKConfig
 
 def compute_micro_metric_averages(micro_metrics_path: Path) -> tuple[float | None, float | None]:
@@ -90,7 +91,8 @@ def read_overall_score(metrics_path: Path) -> float | None:
 
 def main() -> None:
     """Run a basic sparse attention benchmark example."""
-    model_name: str = "Qwen/Qwen3-4B-Instruct-2507"
+    # model_name: str = "mistralai/Ministral-3-8B-Instruct-2512"
+    model_name: str = "meta-llama/Llama-3.1-8B-Instruct"
     device: int = 0
     sparse_attention_config: ResearchAttentionConfig = ResearchAttentionConfig(masker_configs=[
         SinkMaskerConfig(sink_size=128),
@@ -104,13 +106,14 @@ def main() -> None:
      # commonly flash_attention_2 is supported on other GPUs
     adapter: ModelAdapterHF = ModelAdapterHF(
         model_name=model_name,
-        sparse_attention_config=sparse_attention_config,
-        model_kwargs= {"torch_dtype": torch.bfloat16},
-        device=device
+        sparse_attention_config=None,
+        model_kwargs={"dtype": torch.bfloat16, "attn_implementation": "sdpa"},
+        device=device,
+        model_registry_path="sparse_attention_hub/adapters/model_servers/model_registry.yaml",
     )
     
     #benchmark = LongBench(['passage_retrieval_en'])
-    benchmark: Ruler32K = Ruler32K(['niah_multikey_2'])
+    benchmark: Ruler32K = Ruler32K(['qa_2'])
 
     result_dir: Path = Path("./test_results.4B/")
     # Remove result directory if it exists
@@ -136,7 +139,7 @@ def main() -> None:
             ],
         )
     metric_logger.flush()
-    benchmark.run_benchmark(adapter, result_dir, request_kwargs={"max_requests": 5, "max_context_length": 32000}, generation_kwargs={"max_new_tokens": 20})
+    benchmark.run_benchmark(adapter, result_dir, request_kwargs={"max_requests": 100, "max_context_length": 32000}, generation_kwargs={"max_new_tokens": 20})
 
     micro_metrics_path: Path = result_dir / "micro_metrics.jsonl"
     avg_density, avg_error = compute_micro_metric_averages(micro_metrics_path)

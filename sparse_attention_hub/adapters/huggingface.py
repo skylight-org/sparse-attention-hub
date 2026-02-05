@@ -14,6 +14,8 @@ from ..sparse_attention.base import SparseAttention, SparseAttentionConfig
 from ..sparse_attention.research_attention.base import ResearchAttention
 from .base import ModelAdapter, Request, RequestResponse
 from .model_servers.huggingface import ModelServerHF
+from .utils.config import ModelServerConfig
+import os
 
 INT_MAX = 2**31 - 1
 
@@ -46,6 +48,7 @@ class ModelAdapterHF(ModelAdapter):
         self._custom_attention_fn: Optional[Callable] = None
         self.model_kwargs = model_kwargs or {}
         self.tokenizer_kwargs = tokenizer_kwargs or {}
+        self.model_registry_path = kwargs.get("model_registry_path", "")
 
         # more useful parameters to store
         self.device = (
@@ -69,7 +72,7 @@ class ModelAdapterHF(ModelAdapter):
                 except (IndexError, ValueError):
                     gpu_id = None
 
-        model_server = ModelServerHF()
+        model_server = ModelServerHF(ModelServerConfig(model_registry_path=self.model_registry_path))
         self.model = model_server.get_model(self.model_name, gpu_id, self.model_kwargs)
         self.tokenizer = model_server.get_tokenizer(
             self.model_name, self.tokenizer_kwargs

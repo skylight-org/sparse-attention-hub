@@ -115,23 +115,35 @@ def wait_for_server(port: int, timeout: int = 120) -> bool:
     return False
 
 
-def start_servers(model_name: str, num_gpus: int, base_port: int, output_dir: str) -> List[subprocess.Popen]:
-    """Start multiple servers, one per GPU."""
+def start_servers(model_name: str, num_gpus: int, base_port: int, output_dir: str, gpu_offset: int = 0) -> List[subprocess.Popen]:
+    """Start multiple servers, one per GPU.
+    
+    Args:
+        model_name: HuggingFace model name.
+        num_gpus: Number of GPUs/servers to start.
+        base_port: Starting port number.
+        output_dir: Directory for server logs.
+        gpu_offset: Offset to add to GPU indices (e.g., 4 to use GPUs 4,5,6,7 instead of 0,1,2,3).
+    
+    Returns:
+        List of server Popen objects.
+    """
     servers = []
     server_logs = []
 
     for gpu_id in range(num_gpus):
+        physical_gpu = gpu_offset + gpu_id
         port = base_port + gpu_id
         log_file = Path(output_dir) / f"server_gpu_{gpu_id}.log"
 
         env = os.environ.copy()
-        env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+        env['CUDA_VISIBLE_DEVICES'] = str(physical_gpu)
 
         # Set PYTHONPATH to ensure imports work in subprocess
         project_root = Path(__file__).parent.parent
         env['PYTHONPATH'] = str(project_root)
 
-        print(f"Starting server for GPU {gpu_id} on port {port}...")
+        print(f"Starting server for GPU {physical_gpu} (index {gpu_id}) on port {port}...")
 
         # Start server process
         cmd = [
@@ -338,6 +350,12 @@ def main():
     parser.add_argument('--output_dir', required=True, help='Output directory')
     parser.add_argument('--num_gpus', type=int, default=8, help='Number of GPUs (default: 8)')
     parser.add_argument('--base_port', type=int, default=4000, help='Base port number (default: 4000)')
+    parser.add_argument(
+        '--gpu_offset',
+        type=int,
+        default=0,
+        help='Offset to add to GPU indices (e.g., 4 to use GPUs 4,5,6,7 instead of 0,1,2,3)',
+    )
     parser.add_argument('--skip_validation', action='store_true', help='Skip environment validation')
 
     args = parser.parse_args()
@@ -369,6 +387,7 @@ def main():
     print(f"Model: {args.model_name}")
     print(f"Output directory: {output_dir}")
     print(f"Number of GPUs: {args.num_gpus}")
+    print(f"GPU offset: {args.gpu_offset} (using GPUs {args.gpu_offset}-{args.gpu_offset + args.num_gpus - 1})")
     print(f"Base port: {args.base_port}")
 
     # Track processes for cleanup
@@ -395,7 +414,7 @@ def main():
                 server_model_name = '/'.join(parts[1:])
                 print(f"ℹ Stripped provider prefix for server startup: {server_model_name}")
         
-        servers = start_servers(server_model_name, args.num_gpus, args.base_port, str(output_dir))
+        servers = start_servers(server_model_name, args.num_gpus, args.base_port, str(output_dir), args.gpu_offset)
 
         # Step 3: Create LLM configs
         print("\n=== Step 3: Creating LLM configs ===")

@@ -4,7 +4,7 @@ import gc
 from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, Mistral3ForConditionalGeneration
 
 from ..utils.config import ModelServerConfig
 from ..utils.exceptions import (
@@ -14,6 +14,12 @@ from ..utils.exceptions import (
 )
 from ..utils.gpu_utils import cleanup_gpu_memory
 from .base import ModelServer
+from .model_registry import (
+    ModelRegistryError,
+    RegistryEntry,
+    load_model_registry,
+    resolve_model_class,
+)
 
 
 class ModelServerHF(ModelServer):
@@ -30,6 +36,25 @@ class ModelServerHF(ModelServer):
             config: Configuration for ModelServer behavior
         """
         super().__init__(config)
+
+        # Cache registry to avoid reading/parsing YAML repeatedly.
+        self._model_registry: Optional[Dict[str, RegistryEntry]] = None
+        self._model_registry_path: Optional[str] = None
+
+    def _get_model_registry(self) -> Dict[str, RegistryEntry]:
+        registry_path = getattr(self.config, "model_registry_path", None)
+        if not registry_path:
+            return {}
+
+        if (
+            self._model_registry is not None
+            and self._model_registry_path == registry_path
+        ):
+            return self._model_registry
+
+        self._model_registry_path = registry_path
+        self._model_registry = load_model_registry(registry_path)
+        return self._model_registry
 
     def _create_model(
         self, model_name: str, gpu_id: Optional[int], model_kwargs: Dict[str, Any]
@@ -53,12 +78,68 @@ class ModelServerHF(ModelServer):
                 f"Loading HuggingFace model: {model_name} with kwargs: {model_kwargs}"
             )
 
-            model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+            effective_kwargs = dict(model_kwargs or {})
+            model_cls = AutoModelForCausalLM
+
+            # Optional registry support (no-op unless configured)
+            registry_path = getattr(self.config, "model_registry_path", None)
+            if registry_path:
+                registry = self._get_model_registry()
+                entry = registry.get(model_name)
+                
+                if entry is None:
+                    self.logger.warning(
+                        f"Model '{model_name}' is not registered in the model registry at "
+                        f"{self._model_registry_path}. Proceeding only if allow_unregistered_models=True."
+                    )
+                    if not getattr(self.config, "allow_unregistered_models", True):
+                        raise ModelRegistryError(
+                            f"Model '{model_name}' is not registered and allow_unregistered_models=False"
+                        )
+                else:
+                    # Start with registry defaults, then override with call-site kwargs
+                    effective_kwargs = dict(entry.default_model_kwargs)
+                    effective_kwargs.update(model_kwargs or {})
+
+                    resolved = resolve_model_class(entry.model_class)
+                    if resolved is not None:
+                        model_cls = resolved
+
+            try:
+                model = model_cls.from_pretrained(model_name, **effective_kwargs)
+            except ValueError as e:
+                # Transformers may reject flex_attention for some architectures (e.g. Qwen3-Next).
+                # If the caller requested flex_attention, fall back to eager so the model can load.
+                requested_attn_impl = effective_kwargs.get(
+                    "attn_implementation"
+                ) or effective_kwargs.get("attention_implementation")
+                message = str(e)
+                if (
+                    requested_attn_impl in {"flex_attention", "flex"}
+                    and "flex_attention" in message
+                    and "does not support" in message
+                ):
+                    self.logger.warning(
+                        f"Model {model_name} does not support flex_attention. Falling back to attn_implementation='eager'."
+                    )
+                    effective_kwargs.pop("attention_implementation", None)
+                    effective_kwargs["attn_implementation"] = "eager"
+                    model = model_cls.from_pretrained(model_name, **effective_kwargs)
+                else:
+                    raise
 
             # Handle device placement
-            if gpu_id is not None:
+            # If device_map is set, placement may be handled by accelerate/sharding.
+            if effective_kwargs.get("device_map") is not None:
+                self.logger.debug(
+                    f"device_map is set for {model_name}. Skipping explicit .to(device) placement"
+                )
+            elif gpu_id is not None:
                 if torch.cuda.is_available():
-                    device: torch.device = torch.device(f"cuda:{gpu_id}")
+                    if isinstance(gpu_id, str) and gpu_id.startswith("cuda"):
+                        device = gpu_id
+                    else:
+                        device = "cuda:" + f"{gpu_id}"
                     self.logger.debug(f"Moving model {model_name} to device: {device}")
                     model = model.to(device)  # type: ignore[arg-type]
                 else:
@@ -87,7 +168,7 @@ class ModelServerHF(ModelServer):
         Args:
             tokenizer_name: Name of the HuggingFace tokenizer to create
             tokenizer_kwargs: Additional tokenizer creation arguments
-
+                                    model = model_cls.from_pretrained(model_name, **effective_kwargs)
         Returns:
             Created HuggingFace tokenizer instance
 

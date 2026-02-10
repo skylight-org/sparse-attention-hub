@@ -7,6 +7,10 @@ import torch
 
 from sparse_attention_hub.adapters.model_servers.base import ModelServer
 from sparse_attention_hub.adapters.model_servers.huggingface import ModelServerHF
+from sparse_attention_hub.adapters.model_servers.model_registry import (
+    ModelRegistryError,
+    RegistryEntry,
+)
 from sparse_attention_hub.adapters.utils.config import ModelServerConfig
 from sparse_attention_hub.adapters.utils.exceptions import (
     ModelCreationError,
@@ -65,6 +69,110 @@ class TestModelCreation:
     def teardown_method(self) -> None:
         """Clean up after each test."""
         ModelServer._instance = None
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.resolve_model_class"
+    )
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
+    )
+    def test_registry_registered_model_merges_kwargs_and_uses_class(
+        self, mock_load_registry, mock_resolve_class
+    ) -> None:
+        """Registered models should use registry defaults overridden by user kwargs."""
+        # Configure a registry-backed server
+        ModelServer._instance = None
+        server = ModelServerHF(
+            ModelServerConfig(model_registry_path="/tmp/registry.yaml")
+        )
+
+        entry = RegistryEntry(
+            model_id="registered-model",
+            model_class="SomeModelClass",
+            default_model_kwargs={"foo": "bar", "torch_dtype": "float16"},
+        )
+        mock_load_registry.return_value = {"registered-model": entry}
+
+        mock_model = Mock()
+        mock_model.to.return_value = mock_model
+
+        mock_model_cls = Mock()
+        mock_model_cls.from_pretrained.return_value = mock_model
+        mock_resolve_class.return_value = mock_model_cls
+
+        model = server._create_model(
+            "registered-model",
+            None,
+            {"torch_dtype": torch.bfloat16},
+        )
+
+        mock_model_cls.from_pretrained.assert_called_once_with(
+            "registered-model", foo="bar", torch_dtype=torch.bfloat16
+        )
+        mock_model.to.assert_called_once_with("cpu")
+        assert model == mock_model
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.AutoModelForCausalLM"
+    )
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
+    )
+    def test_registry_unregistered_model_warns_and_proceeds(
+        self, mock_load_registry, mock_auto_model, caplog
+    ) -> None:
+        """Unregistered models should emit a warning but still load by default."""
+        ModelServer._instance = None
+        server = ModelServerHF(
+            ModelServerConfig(model_registry_path="/tmp/registry.yaml")
+        )
+
+        mock_load_registry.return_value = {
+            "some-other-model": RegistryEntry(
+                model_id="some-other-model",
+                model_class=None,
+                default_model_kwargs={},
+            )
+        }
+
+        mock_model = Mock()
+        mock_model.to.return_value = mock_model
+        mock_auto_model.from_pretrained.return_value = mock_model
+
+        caplog.clear()
+        model = server._create_model("unregistered-model", None, {"use_cache": True})
+
+        assert any(
+            "not registered" in rec.message.lower() and rec.levelname == "WARNING"
+            for rec in caplog.records
+        )
+        mock_auto_model.from_pretrained.assert_called_once_with(
+            "unregistered-model", use_cache=True
+        )
+        mock_model.to.assert_called_once_with("cpu")
+        assert model == mock_model
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
+    )
+    def test_registry_unregistered_model_can_be_blocked(
+        self, mock_load_registry
+    ) -> None:
+        """If allow_unregistered_models=False, unregistered models should fail."""
+        ModelServer._instance = None
+        server = ModelServerHF(
+            ModelServerConfig(
+                model_registry_path="/tmp/registry.yaml",
+                allow_unregistered_models=False,
+            )
+        )
+
+        mock_load_registry.return_value = {}
+
+        with pytest.raises(ModelCreationError) as exc_info:
+            server._create_model("unregistered-model", None, {})
+
+        assert isinstance(exc_info.value.original_error, ModelRegistryError)
 
     @patch(
         "sparse_attention_hub.adapters.model_servers.huggingface.AutoModelForCausalLM"
@@ -673,3 +781,179 @@ class TestIntegration:
         assert len(server._models) == 1
         model_stats = server.get_model_stats()
         assert model_stats["zero_reference_models"] == 1
+
+
+@pytest.mark.unit
+class TestModelRegistryBehavior:
+    """Tests for model registry integration inside ModelServerHF._create_model."""
+
+    def setup_method(self) -> None:
+        ModelServer._instance = None
+
+    def teardown_method(self) -> None:
+        ModelServer._instance = None
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.AutoModelForCausalLM"
+    )
+    def test_registry_opt_in_disabled(self, mock_auto_model) -> None:
+        """If model_registry_path is not set, registry should be ignored."""
+        mock_model = Mock()
+        mock_model.to.return_value = mock_model
+        mock_auto_model.from_pretrained.return_value = mock_model
+
+        server = ModelServerHF(ModelServerConfig())  # no model_registry_path
+        server._create_model("gpt2", None, {"torch_dtype": torch.float32})
+
+        mock_auto_model.from_pretrained.assert_called_once_with(
+            "gpt2", torch_dtype=torch.float32
+        )
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.resolve_model_class"
+    )
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
+    )
+    def test_registered_model_uses_registry_defaults_and_overrides(
+        self, mock_load_registry, mock_resolve_model_class
+    ) -> None:
+        """Registered model should use registry defaults, overridden by call-site kwargs."""
+        # Fake resolved class with from_pretrained
+        mock_model_cls = Mock()
+        mock_model = Mock()
+        mock_model.to.return_value = mock_model
+        mock_model_cls.from_pretrained.return_value = mock_model
+        mock_resolve_model_class.return_value = mock_model_cls
+
+        # Registry entry defaults
+        entry = Mock()
+        entry.model_class = "SomeModelClass"
+        entry.default_model_kwargs = {
+            "device_map": "auto",
+            "torch_dtype": torch.float16,
+            "use_cache": True,
+        }
+        mock_load_registry.return_value = {"my-model": entry}
+
+        server = ModelServerHF(
+            ModelServerConfig(model_registry_path="/tmp/registry.yaml")
+        )
+
+        # Call-site overrides torch_dtype and adds new kw
+        model = server._create_model(
+            "my-model",
+            None,
+            {"torch_dtype": torch.bfloat16, "attn_implementation": "eager"},
+        )
+
+        # Expect: defaults merged, then call-site overrides
+        mock_model_cls.from_pretrained.assert_called_once_with(
+            "my-model",
+            device_map="auto",
+            torch_dtype=torch.bfloat16,  # overridden
+            use_cache=True,
+            attn_implementation="eager",  # added
+        )
+        assert model == mock_model
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.AutoModelForCausalLM"
+    )
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
+    )
+    def test_unregistered_model_warns_and_proceeds_when_allowed(
+        self, mock_load_registry, mock_auto_model, caplog
+    ) -> None:
+        """If registry enabled and model missing, warn; proceed only if allow_unregistered_models=True."""
+        mock_model = Mock()
+        mock_model.to.return_value = mock_model
+        mock_auto_model.from_pretrained.return_value = mock_model
+        mock_load_registry.return_value = {"some-other-model": Mock()}
+
+        server = ModelServerHF(
+            ModelServerConfig(
+                model_registry_path="/tmp/registry.yaml", allow_unregistered_models=True
+            )
+        )
+
+        with caplog.at_level("WARNING"):
+            server._create_model("missing-model", None, {"torch_dtype": torch.float32})
+
+        assert any("not registered" in r.message.lower() for r in caplog.records)
+        mock_auto_model.from_pretrained.assert_called_once_with(
+            "missing-model", torch_dtype=torch.float32
+        )
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
+    )
+    def test_unregistered_model_raises_when_not_allowed(
+        self, mock_load_registry
+    ) -> None:
+        """If registry enabled and model missing, raise when allow_unregistered_models=False."""
+        mock_load_registry.return_value = {"some-other-model": Mock()}
+
+        server = ModelServerHF(
+            ModelServerConfig(
+                model_registry_path="/tmp/registry.yaml",
+                allow_unregistered_models=False,
+            )
+        )
+
+        with pytest.raises(ModelCreationError) as exc_info:
+            server._create_model("missing-model", None, {})
+
+        # Underlying error should mention ModelRegistryError
+        assert "not registered" in str(exc_info.value.original_error).lower()
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
+    )
+    def test_registry_cached_per_path(self, mock_load_registry) -> None:
+        """Registry should be cached and only loaded once per path."""
+        mock_load_registry.return_value = {}
+
+        config = ModelServerConfig(model_registry_path="/tmp/registry.yaml")
+        server = ModelServerHF(config)
+
+        server._get_model_registry()
+        server._get_model_registry()
+        assert mock_load_registry.call_count == 1
+
+        # Change path => reload
+        server.config.model_registry_path = "/tmp/registry2.yaml"
+        server._get_model_registry()
+        assert mock_load_registry.call_count == 2
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.resolve_model_class"
+    )
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
+    )
+    def test_registry_bad_model_class_wraps_error(
+        self, mock_load_registry, mock_resolve_model_class
+    ) -> None:
+        """If registry model_class cannot be resolved, _create_model should raise ModelCreationError."""
+        entry = Mock()
+        entry.model_class = "DefinitelyNotARealClass"
+        entry.default_model_kwargs = {}
+        mock_load_registry.return_value = {"my-model": entry}
+
+        # Simulate resolve failure
+        from sparse_attention_hub.adapters.model_servers.model_registry import (
+            ModelRegistryError,
+        )
+
+        mock_resolve_model_class.side_effect = ModelRegistryError("boom")
+
+        server = ModelServerHF(
+            ModelServerConfig(model_registry_path="/tmp/registry.yaml")
+        )
+
+        with pytest.raises(ModelCreationError) as exc_info:
+            server._create_model("my-model", None, {})
+
+        assert "boom" in str(exc_info.value.original_error)

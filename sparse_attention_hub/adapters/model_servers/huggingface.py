@@ -56,7 +56,14 @@ class ModelServerHF(ModelServer):
             model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
             # Handle device placement
-            if gpu_id is not None:
+            # If device_map is specified (e.g., "auto"), accelerate handles placement
+            # and we must NOT call .to() — it breaks accelerate's dispatch hooks
+            if "device_map" in model_kwargs:
+                self.logger.debug(
+                    f"Model {model_name} loaded with device_map='{model_kwargs['device_map']}', "
+                    f"skipping manual device placement"
+                )
+            elif gpu_id is not None:
                 if torch.cuda.is_available():
                     if type(gpu_id) == str and gpu_id.startswith("cuda"):
                         device = gpu_id

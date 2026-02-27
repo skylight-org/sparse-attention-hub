@@ -118,8 +118,10 @@ class ModelAdapterHF(ModelAdapter):
         context_tokens = context_tokens[
             :, :max_context_length
         ]  # truncate context to max_context_length
-        if self.device is not None:
-            context_tokens = context_tokens.to(self.device)
+        # Use model.device for correct placement with multi-GPU / device_map="auto" models
+        input_device = self.model.device if hasattr(self.model, 'device') else self.device
+        if input_device is not None:
+            context_tokens = context_tokens.to(input_device)
         print(f"Context tokens: {context_tokens.shape}")
         responses: List[str] = []
 
@@ -129,8 +131,8 @@ class ModelAdapterHF(ModelAdapter):
                 sparse_meta_data: Dict[str, Any] = {}
 
                 question_tokens = self.tokenizer.encode(question, return_tensors="pt")
-                if self.device is not None:
-                    question_tokens = question_tokens.to(self.device)
+                if input_device is not None:
+                    question_tokens = question_tokens.to(input_device)
 
                 context_outputs = self.model(
                     context_tokens,

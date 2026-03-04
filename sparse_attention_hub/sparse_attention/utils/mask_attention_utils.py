@@ -201,19 +201,30 @@ def _compute_masked_exp_attention_weights(
     key_states: torch.Tensor = repeat_kv(keys, num_key_value_groups)
 
     raw_attention_weights: torch.Tensor = (
-        torch.matmul(queries, key_states.transpose(2, 3)) * scaling
+        torch.matmul(queries, key_states.transpose(2, 3)).to(torch.float32)
+        * float(scaling)
     )
 
     if attention_mask is not None:
         raw_attention_weights = (
-            raw_attention_weights + attention_mask[:, :, :, : key_states.shape[-2]]
+            raw_attention_weights
+            + attention_mask[:, :, :, : key_states.shape[-2]].to(torch.float32)
         )
 
     row_wise_max: torch.Tensor = torch.max(raw_attention_weights, dim=-1, keepdim=True)[
         0
     ]
     raw_attention_weights = raw_attention_weights - row_wise_max
+    finite_rows = torch.isfinite(row_wise_max)
+    raw_attention_weights = torch.where(
+        finite_rows,
+        raw_attention_weights,
+        torch.full_like(raw_attention_weights, float("-inf")),
+    )
     exp_attention_weights: torch.Tensor = torch.exp(raw_attention_weights)
+    exp_attention_weights = torch.nan_to_num(
+        exp_attention_weights, nan=0.0, posinf=0.0, neginf=0.0
+    )
 
     exp_attention_weights = sparse_attention_mask.apply_inv_mask(exp_attention_weights)
 
@@ -432,7 +443,9 @@ def get_masked_attention_output(
 
     # Prepare values by applying key-value grouping
     num_key_value_groups: int = _get_num_key_value_groups(queries, values)
-    value_states: torch.Tensor = repeat_kv(values, num_key_value_groups)
+    value_states: torch.Tensor = repeat_kv(values, num_key_value_groups).to(
+        exp_attention_weights.dtype
+    )
 
     # Use internal helpers with pre-computed weights
     num: torch.Tensor = _get_attention_numerator(exp_attention_weights, value_states)
@@ -452,11 +465,16 @@ def get_masked_attention_output(
     )
 
     # Compute final attention output
-    attention_output: torch.Tensor = (num / den).transpose(1, 2).contiguous()
+    num = torch.nan_to_num(num, nan=0.0, posinf=0.0, neginf=0.0)
+    den = torch.nan_to_num(den, nan=0.0, posinf=0.0, neginf=0.0)
+    den = den.clamp_min(torch.finfo(den.dtype).tiny)
+    attention_output: torch.Tensor = (num / den).to(queries.dtype).transpose(1, 2).contiguous()
 
     if return_attention_weights:
         # Normalize exponential weights to get attention probabilities
-        attention_weights: torch.Tensor = exp_attention_weights / den
+        attention_weights: torch.Tensor = (exp_attention_weights / den).to(
+            queries.dtype
+        )
         return attention_output, attention_weights
 
     return attention_output

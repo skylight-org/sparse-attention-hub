@@ -397,7 +397,7 @@ class ModelAdapterHF(ModelAdapter):
                 input_ids=question_tokens,
                 past_key_values=context_outputs.past_key_values,
                 position_ids=position_ids,
-                num_logits_to_keep=1,
+                logits_to_keep=1,
                 sparse_meta_data=sparse_meta_data,
             )
 
@@ -414,6 +414,7 @@ class ModelAdapterHF(ModelAdapter):
                     input_ids=generated_ids[-1].unsqueeze(0).unsqueeze(0),
                     past_key_values=context_outputs.past_key_values,
                     position_ids=position_ids + i,
+                    logits_to_keep=1,
                     sparse_meta_data=sparse_meta_data,
                 )
                 # TODO: support other forms of decoding

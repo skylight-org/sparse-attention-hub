@@ -8,7 +8,6 @@ import torch
 from sparse_attention_hub.adapters.model_servers.base import ModelServer
 from sparse_attention_hub.adapters.model_servers.huggingface import ModelServerHF
 from sparse_attention_hub.adapters.model_servers.model_registry import (
-    ModelRegistryError,
     RegistryEntry,
 )
 from sparse_attention_hub.adapters.utils.config import ModelServerConfig

@@ -65,7 +65,7 @@ class EfficientAttention(SparseAttention):
             raise TypeError(f"Expected EfficientAttentionConfig, got {type(config)}")
 
         # Import here to avoid circular imports
-        from typing import Type, cast
+        from typing import Type
 
         from .implementations import (
             DoubleSparsity,
@@ -91,9 +91,5 @@ class EfficientAttention(SparseAttention):
                 f"No efficient attention class found for config type: {type(config)}"
             )
 
-        # Cast to help mypy understand the type
-        concrete_class: Type[EfficientAttention] = cast(
-            Type[EfficientAttention], concrete_class
-        )
         # Call the concrete class's create_from_config method
         return concrete_class.create_from_config(config)

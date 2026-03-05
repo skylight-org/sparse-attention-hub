@@ -1,5 +1,5 @@
 import pickle
-from typing import Dict, List
+from typing import Dict, List, cast
 
 import torch
 
@@ -32,7 +32,7 @@ def convert_usa_weights_to_hash_attention(
     hat_weights = {}
 
     for layer_idx in range(num_layers):
-        layer_weights = {
+        layer_weights: Dict[str, List[torch.Tensor]] = {
             "query_matrix": [],
             "query_bias": [],
             "key_matrix": [],
@@ -40,10 +40,18 @@ def convert_usa_weights_to_hash_attention(
         }
 
         # Collect weights for all heads in this layer
-        query_matrices_per_layer = [[] for _ in range(num_mlp_layers)]
-        query_biases_per_layer = [[] for _ in range(num_mlp_layers)]
-        key_matrices_per_layer = [[] for _ in range(num_mlp_layers)]
-        key_biases_per_layer = [[] for _ in range(num_mlp_layers)]
+        query_matrices_per_layer: List[List[torch.Tensor]] = [
+            [] for _ in range(num_mlp_layers)
+        ]
+        query_biases_per_layer: List[List[torch.Tensor]] = [
+            [] for _ in range(num_mlp_layers)
+        ]
+        key_matrices_per_layer: List[List[torch.Tensor]] = [
+            [] for _ in range(num_mlp_layers)
+        ]
+        key_biases_per_layer: List[List[torch.Tensor]] = [
+            [] for _ in range(num_mlp_layers)
+        ]
 
         for head_idx in range(num_heads):
             query_prefix = f"{layer_idx}.learning_to_hash_transformation_q.{head_idx}"
@@ -159,7 +167,9 @@ def load_hat_weights(
     print(f"Loading HAT weights from {hat_weights_path}")
 
     with open(hat_weights_path, "rb") as f:
-        hat_weights = pickle.load(f)
+        hat_weights: Dict[int, Dict[str, List[torch.Tensor]]] = cast(
+            Dict[int, Dict[str, List[torch.Tensor]]], pickle.load(f)
+        )
 
     # Move weights to specified device
     for layer_idx, layer_weights in hat_weights.items():

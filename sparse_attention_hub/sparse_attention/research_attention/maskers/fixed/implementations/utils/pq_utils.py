@@ -4,7 +4,7 @@ K-means implementation is extracted from:
 https://github.com/subhadarship/kmeans_pytorch
 """
 
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -180,7 +180,9 @@ Design choices:
 """
 
 
-def initialize_batched(X, num_clusters, seed=None):
+def initialize_batched(
+    X: torch.Tensor, num_clusters: int, seed: Optional[int] = None
+) -> torch.Tensor:
     """
     Initialize cluster centers for batched k-means
 
@@ -216,8 +218,11 @@ def initialize_batched(X, num_clusters, seed=None):
 
 
 def pairwise_distance_batched(
-    data1, data2, device=torch.device("cpu"), tqdm_flag=False
-):
+    data1: torch.Tensor,
+    data2: torch.Tensor,
+    device: torch.device = torch.device("cpu"),
+    tqdm_flag: bool = False,
+) -> torch.Tensor:
     """
     Compute pairwise Euclidean distances for batched data
 
@@ -253,16 +258,16 @@ def pairwise_distance_batched(
 
 
 def kmeans_batched(
-    X,
-    num_clusters,
-    distance="euclidean",
-    cluster_centers=None,
-    tol=1e-4,
-    tqdm_flag=False,
-    iter_limit=0,
-    device=torch.device("cpu"),
-    seed=None,
-):
+    X: torch.Tensor,
+    num_clusters: int,
+    distance: str = "euclidean",
+    cluster_centers: Optional[torch.Tensor] = None,
+    tol: float = 1e-4,
+    tqdm_flag: bool = False,
+    iter_limit: int = 0,
+    device: torch.device = torch.device("cpu"),
+    seed: Optional[int] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Perform batched k-means clustering
 

@@ -484,14 +484,14 @@ class Mask:
             )
         else:
             # Fast path: No padding handling (zero-sync, assumes all indices are valid)
-            flat_indices_with_offset: torch.Tensor = flat_row_wise_idx + row_offsets
+            flat_indices_with_offset = flat_row_wise_idx + row_offsets
 
             # Flatten directly without filtering
-            valid_flat_indices: torch.Tensor = flat_indices_with_offset.reshape(-1)
-            valid_values: torch.Tensor = flat_data.reshape(-1)
+            valid_flat_indices = flat_indices_with_offset.reshape(-1)
+            valid_values = flat_data.reshape(-1)
 
             # Create uniform ptr array (each row has exactly k elements)
-            ptr: torch.Tensor = torch.arange(
+            ptr = torch.arange(
                 0,
                 batch_size * k + 1,
                 k,
@@ -542,10 +542,8 @@ class Mask:
                 0, dtype=torch.long, device=self.device
             )
             ptr_size: int = int(np.prod(self.shape[:-1]) + 1)
-            ptr: torch.Tensor = torch.zeros(
-                ptr_size, dtype=torch.long, device=self.device
-            )
-            data: torch.Tensor = torch.empty(0, dtype=self.dtype, device=self.device)
+            ptr = torch.zeros(ptr_size, dtype=torch.long, device=self.device)
+            data = torch.empty(0, dtype=self.dtype, device=self.device)
             return empty_indices, ptr, data
         elif self.from_index:
             if self.indices is None or self.ptr is None:

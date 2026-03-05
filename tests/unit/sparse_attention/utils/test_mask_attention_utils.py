@@ -773,6 +773,7 @@ class TestGetMaskedAttentionOutputExternal:
             keys=keys,
             values=values,
             attention_mask=attention_mask,
+            sinks=None,
             scaling=scaling,
             dropout=dropout,
             sparse_attention_mask=sparse_attention_mask,
@@ -831,6 +832,7 @@ class TestGetMaskedAttentionOutputExternal:
             keys=keys,
             values=values,
             attention_mask=attention_mask,
+            sinks=None,
             scaling=scaling,
             dropout=dropout,
             sparse_attention_mask=sparse_attention_mask,
@@ -887,6 +889,7 @@ class TestGetMaskedAttentionOutputExternal:
             keys=keys,
             values=values,
             attention_mask=attention_mask,
+            sinks=None,
             scaling=scaling,
             dropout=dropout,
             sparse_attention_mask=sparse_attention_mask,
@@ -943,6 +946,7 @@ class TestGetMaskedAttentionOutputExternal:
             values=values,
             attention_mask=attention_mask,
             scaling=scaling,
+            sinks=None,
             dropout=dropout,
             sparse_attention_mask=sparse_attention_mask,
             return_attention_weights=True,
@@ -1004,6 +1008,7 @@ class TestGetMaskedAttentionOutputExternal:
                 keys=keys,
                 values=values,
                 attention_mask=attention_mask,
+                sinks=None,
                 scaling=scaling,
                 dropout=dropout,
                 sparse_attention_mask=sparse_attention_mask,
@@ -1016,3 +1021,120 @@ class TestGetMaskedAttentionOutputExternal:
         print(
             "[NOTE] dropout behavior is different in eager and sparse attention by design"
         )
+
+    def test_sinks_adjust_denominator(self):
+        """Sinks should add mass to denominator and reduce key attention weights (GPT-OSS behavior).
+
+        Setup:
+        - queries/keys are all zeros -> all key logits are 0 -> uniform over keys
+        - sink logit = 0 -> adds one extra exp(0) term per row
+        - full mask -> all key positions are allowed
+        Expected:
+        - no sink: key probs = [1/2, 1/2], output = [1/2, 1/2]
+        - with sink: key probs = [1/3, 1/3] (sink takes 1/3), output = [1/3, 1/3]
+        - sum of returned key probs drops from 1 to 2/3
+        """
+
+        batch_size, num_heads, seq_len, d_model = 1, 1, 2, 2
+        scaling = 1.0
+        dropout = 0.0
+
+        # Deterministic inputs: all logits are zeros
+        queries = torch.zeros(batch_size, num_heads, seq_len, d_model)
+        keys = torch.zeros(batch_size, num_heads, seq_len, d_model)
+
+        # Values: identity-like so weighted sum equals the weights as a vector
+        # shape: (B, H_kv, K, D)
+        values = torch.tensor([[[[1.0, 0.0], [0.0, 1.0]]]])
+
+        sparse_attention_mask = Mask.create_full_mask(
+            (batch_size, num_heads, seq_len, seq_len),
+            dtype=torch.float32,
+            device=torch.device("cpu"),
+        )
+
+        module = torch.nn.Module()
+        module.eval()
+        module.num_key_value_groups = 1  # avoid repeat_kv changing head count
+
+        sink_value = torch.tensor([0.0])  # shape [H]; contributes exp(0)=1 per row
+
+        out_no_sink, weights_no_sink = get_masked_attention_output(
+            module=module,
+            queries=queries,
+            keys=keys,
+            values=values,
+            attention_mask=None,
+            sinks=None,
+            scaling=scaling,
+            dropout=dropout,
+            sparse_attention_mask=sparse_attention_mask,
+            return_attention_weights=True,
+        )
+
+        out_with_sink, weights_with_sink = get_masked_attention_output(
+            module=module,
+            queries=queries,
+            keys=keys,
+            values=values,
+            attention_mask=None,
+            sinks=sink_value,
+            scaling=scaling,
+            dropout=dropout,
+            sparse_attention_mask=sparse_attention_mask,
+            return_attention_weights=True,
+        )
+
+        # Shape sanity checks
+        assert out_no_sink.shape == (
+            batch_size,
+            seq_len,
+            num_heads,
+            d_model,
+        )  # (B,Q,H,D)
+        assert out_with_sink.shape == (
+            batch_size,
+            seq_len,
+            num_heads,
+            d_model,
+        )  # (B,Q,H,D)
+        assert weights_no_sink.shape == (
+            batch_size,
+            num_heads,
+            seq_len,
+            seq_len,
+        )  # (B,H,Q,K)
+        assert weights_with_sink.shape == (batch_size, num_heads, seq_len, seq_len)
+
+        # Expected outputs: (B, Q, H, D)
+        expected_no_sink = torch.tensor([[[[0.5, 0.5]], [[0.5, 0.5]]]])
+        expected_with_sink = torch.tensor(
+            [[[[1.0 / 3.0, 1.0 / 3.0]], [[1.0 / 3.0, 1.0 / 3.0]]]]
+        )
+
+        torch.testing.assert_close(out_no_sink, expected_no_sink, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(
+            out_with_sink, expected_with_sink, atol=1e-6, rtol=1e-6
+        )
+
+        # Without sinks, key probabilities sum to 1. With sink=0, sink absorbs 1/3, so keys sum to 2/3.
+        prob_sum_no_sink = weights_no_sink.sum(dim=-1)  # (B, H, Q)
+        prob_sum_with_sink = weights_with_sink.sum(dim=-1)  # (B, H, Q)
+
+        torch.testing.assert_close(
+            prob_sum_no_sink,
+            torch.ones_like(prob_sum_no_sink),
+            atol=1e-6,
+            rtol=1e-6,
+        )
+        torch.testing.assert_close(
+            prob_sum_with_sink,
+            torch.full_like(prob_sum_with_sink, 2.0 / 3.0),
+            atol=1e-6,
+            rtol=1e-6,
+        )
+
+        # Robustness: sink should scale all key probs by the same factor when logits are equal.
+        # Here: [1/3,1/3] vs [1/2,1/2] => scale factor = 2/3 everywhere.
+        scale = (weights_with_sink / weights_no_sink).mean()
+        torch.testing.assert_close(scale, torch.tensor(2.0 / 3.0), atol=1e-6, rtol=1e-6)

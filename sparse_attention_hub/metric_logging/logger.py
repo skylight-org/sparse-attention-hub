@@ -31,7 +31,7 @@ class MicroMetricLogger:
     # Class-level storage for registered metrics (works without initialization)
     _registered_metrics: Dict[str, type] = {}  # identifier -> dtype mapping
 
-    def __new__(cls, *args, **kwargs) -> "MicroMetricLogger":
+    def __new__(cls, *args: Any, **kwargs: Any) -> "MicroMetricLogger":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -123,7 +123,7 @@ class MicroMetricLogger:
         except Exception:
             return "unknown"
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup when logger is destroyed."""
         self.flush()  # Final flush
 
@@ -279,4 +279,4 @@ class MicroMetricLogger:
 
     def get_max_records(self) -> Optional[int]:
         """Get the current max_records limit."""
-        return getattr(self, "max_records", None)
+        return self.max_records

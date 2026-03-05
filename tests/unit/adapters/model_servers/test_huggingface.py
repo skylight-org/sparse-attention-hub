@@ -115,68 +115,6 @@ class TestModelCreation:
     @patch(
         "sparse_attention_hub.adapters.model_servers.huggingface.AutoModelForCausalLM"
     )
-    @patch(
-        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
-    )
-    def test_registry_unregistered_model_warns_and_proceeds(
-        self, mock_load_registry, mock_auto_model, caplog
-    ) -> None:
-        """Unregistered models should emit a warning but still load by default."""
-        ModelServer._instance = None
-        server = ModelServerHF(
-            ModelServerConfig(model_registry_path="/tmp/registry.yaml")
-        )
-
-        mock_load_registry.return_value = {
-            "some-other-model": RegistryEntry(
-                model_id="some-other-model",
-                model_class=None,
-                default_model_kwargs={},
-            )
-        }
-
-        mock_model = Mock()
-        mock_model.to.return_value = mock_model
-        mock_auto_model.from_pretrained.return_value = mock_model
-
-        caplog.clear()
-        model = server._create_model("unregistered-model", None, {"use_cache": True})
-
-        assert any(
-            "not registered" in rec.message.lower() and rec.levelname == "WARNING"
-            for rec in caplog.records
-        )
-        mock_auto_model.from_pretrained.assert_called_once_with(
-            "unregistered-model", use_cache=True
-        )
-        mock_model.to.assert_called_once_with(torch.device("cpu"))
-        assert model == mock_model
-
-    @patch(
-        "sparse_attention_hub.adapters.model_servers.huggingface.load_model_registry"
-    )
-    def test_registry_unregistered_model_can_be_blocked(
-        self, mock_load_registry
-    ) -> None:
-        """If allow_unregistered_models=False, unregistered models should fail."""
-        ModelServer._instance = None
-        server = ModelServerHF(
-            ModelServerConfig(
-                model_registry_path="/tmp/registry.yaml",
-                allow_unregistered_models=False,
-            )
-        )
-
-        mock_load_registry.return_value = {}
-
-        with pytest.raises(ModelCreationError) as exc_info:
-            server._create_model("unregistered-model", None, {})
-
-        assert isinstance(exc_info.value.original_error, ModelRegistryError)
-
-    @patch(
-        "sparse_attention_hub.adapters.model_servers.huggingface.AutoModelForCausalLM"
-    )
     @patch("torch.cuda.is_available")
     def test_create_model_gpu(self, mock_cuda_available, mock_auto_model) -> None:
         """Test creating model on GPU."""

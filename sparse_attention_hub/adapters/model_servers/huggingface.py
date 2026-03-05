@@ -168,7 +168,7 @@ class ModelServerHF(ModelServer):
         Args:
             tokenizer_name: Name of the HuggingFace tokenizer to create
             tokenizer_kwargs: Additional tokenizer creation arguments
-                                    model = model_cls.from_pretrained(model_name, **effective_kwargs)
+
         Returns:
             Created HuggingFace tokenizer instance
 

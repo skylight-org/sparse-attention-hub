@@ -44,7 +44,9 @@ def get_true_attention_output(
         query=queries,
         key=key_states,
         value=value_states,
-        attn_mask=attention_mask[:, :, :, : key_states.shape[-2]] if attention_mask is not None else None,
+        attn_mask=attention_mask[:, :, :, : key_states.shape[-2]]
+        if attention_mask is not None
+        else None,
         dropout_p=dropout if module.training else 0.0,
         is_causal=False,
         scale=scaling,
@@ -56,7 +58,9 @@ def get_true_attention_output(
             from torch.nn.attention import sdpa_kernel, SDPBackend
 
             with sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION]):
-                attn_output = torch.nn.functional.scaled_dot_product_attention(**sdp_kwargs)
+                attn_output = torch.nn.functional.scaled_dot_product_attention(
+                    **sdp_kwargs
+                )
         except Exception:
             attn_output = torch.nn.functional.scaled_dot_product_attention(**sdp_kwargs)
     else:
@@ -64,7 +68,6 @@ def get_true_attention_output(
         attn_output = torch.nn.functional.scaled_dot_product_attention(**sdp_kwargs)
     attn_output = attn_output.transpose(1, 2).contiguous()
     return attn_output, None  # SDPA doesn’t return weights
-
 
 
 def apply_inv_mask_sum(input_tensor: torch.Tensor, mask: Mask) -> torch.Tensor:
@@ -212,16 +215,12 @@ def _compute_masked_exp_attention_weights(
 
     q = queries.to(torch.float32)
     k = key_states.to(torch.float32)
-    raw_attention_weights: torch.Tensor = (
-        torch.matmul(q, k.transpose(2, 3))
-        * scaling
-    )
+    raw_attention_weights: torch.Tensor = torch.matmul(q, k.transpose(2, 3)) * scaling
 
     if attention_mask is not None:
-        raw_attention_weights = (
-            raw_attention_weights
-            + attention_mask[:, :, :, : key_states.shape[-2]].to(torch.float32)
-        )
+        raw_attention_weights = raw_attention_weights + attention_mask[
+            :, :, :, : key_states.shape[-2]
+        ].to(torch.float32)
 
     row_wise_max: torch.Tensor = torch.max(raw_attention_weights, dim=-1, keepdim=True)[
         0
@@ -350,7 +349,9 @@ def get_attention_numerator(
     num_key_value_groups: int = _get_num_key_value_groups(queries, values)
     value_states: torch.Tensor = repeat_kv(values, num_key_value_groups)
 
-    return _get_attention_numerator(exp_attention_weights, value_states.to(torch.float32))
+    return _get_attention_numerator(
+        exp_attention_weights, value_states.to(torch.float32)
+    )
 
 
 def apply_sink_bias(
@@ -378,7 +379,9 @@ def apply_sink_bias(
     k = key_states.to(torch.float32)
     logits = torch.matmul(q, k.transpose(2, 3)) * float(scaling)  # [B,H,Q,K]
     if attention_mask is not None:
-        logits = logits + attention_mask[:, :, :, : key_states.shape[-2]].to(torch.float32)
+        logits = logits + attention_mask[:, :, :, : key_states.shape[-2]].to(
+            torch.float32
+        )
 
     old_max = logits.max(dim=-1, keepdim=True).values  # [B,H,Q,1]
     new_max = torch.maximum(old_max, sinks_row)
@@ -473,12 +476,16 @@ def get_masked_attention_output(
     num = num.to(torch.float32)
     den = den.to(torch.float32)
     # Compute final attention output
-    attention_output: torch.Tensor = (num / den).to(queries.dtype).transpose(1, 2).contiguous()
+    attention_output: torch.Tensor = (
+        (num / den).to(queries.dtype).transpose(1, 2).contiguous()
+    )
 
     if return_attention_weights:
         # Normalize exponential weights to get attention probabilities
-        attention_weights: torch.Tensor = (exp_attention_weights.to(torch.float32) / den).to(queries.dtype)
-        
+        attention_weights: torch.Tensor = (
+            exp_attention_weights.to(torch.float32) / den
+        ).to(queries.dtype)
+
         return attention_output, attention_weights
 
     return attention_output

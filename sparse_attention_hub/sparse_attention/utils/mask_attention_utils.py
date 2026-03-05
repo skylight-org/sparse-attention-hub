@@ -55,7 +55,7 @@ def get_true_attention_output(
     if torch.cuda.is_available() and attention_mask is None:
         # Only try flash when no explicit mask; flash kernels reject non-null masks.
         try:
-            from torch.nn.attention import sdpa_kernel, SDPBackend
+            from torch.nn.attention import SDPBackend, sdpa_kernel
 
             with sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION]):
                 attn_output = torch.nn.functional.scaled_dot_product_attention(

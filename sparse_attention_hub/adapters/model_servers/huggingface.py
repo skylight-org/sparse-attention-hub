@@ -4,10 +4,7 @@ import gc
 from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from ..utils.config import ModelServerConfig
 from ..utils.exceptions import (

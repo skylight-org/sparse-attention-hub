@@ -109,7 +109,7 @@ class TestModelCreation:
         mock_model_cls.from_pretrained.assert_called_once_with(
             "registered-model", foo="bar", torch_dtype=torch.bfloat16
         )
-        mock_model.to.assert_called_once_with("cpu")
+        mock_model.to.assert_called_once_with(torch.device("cpu"))
         assert model == mock_model
 
     @patch(
@@ -149,7 +149,7 @@ class TestModelCreation:
         mock_auto_model.from_pretrained.assert_called_once_with(
             "unregistered-model", use_cache=True
         )
-        mock_model.to.assert_called_once_with("cpu")
+        mock_model.to.assert_called_once_with(torch.device("cpu"))
         assert model == mock_model
 
     @patch(

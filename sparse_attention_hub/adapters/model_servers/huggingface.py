@@ -141,11 +141,11 @@ class ModelServerHF(ModelServer):
             elif gpu_id is not None:
                 if torch.cuda.is_available():
                     if isinstance(gpu_id, str) and gpu_id.startswith("cuda"):
-                        device = gpu_id
+                        device = torch.device(gpu_id)
                     else:
-                        device = "cuda:" + f"{gpu_id}"
+                        device = torch.device(f"cuda:{gpu_id}")
                     self.logger.debug(f"Moving model {model_name} to device: {device}")
-                    model = model.to(device)  # type: ignore[arg-type]
+                    model = model.to(device)
                 else:
                     self.logger.warning(
                         f"CUDA not available, placing model {model_name} on CPU instead of GPU {gpu_id}"

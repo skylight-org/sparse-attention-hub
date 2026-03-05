@@ -1,6 +1,5 @@
 """HuggingFace adapter implementation for sparse attention."""
 
-import os
 import random
 import string
 from contextlib import contextmanager

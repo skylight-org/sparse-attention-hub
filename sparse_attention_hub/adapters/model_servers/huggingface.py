@@ -6,8 +6,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 import torch
 from transformers import (
     AutoModelForCausalLM,
-    AutoTokenizer,
-    Mistral3ForConditionalGeneration,
+    AutoTokenizer
 )
 
 from ..utils.config import ModelServerConfig

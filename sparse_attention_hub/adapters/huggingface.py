@@ -397,7 +397,7 @@ class ModelAdapterHF(ModelAdapter):
                 input_ids=question_tokens,
                 past_key_values=context_outputs.past_key_values,
                 position_ids=position_ids,
-                num_logits_to_keep=1,
+                logits_to_keep=1,
                 sparse_meta_data=sparse_meta_data,
             )
 

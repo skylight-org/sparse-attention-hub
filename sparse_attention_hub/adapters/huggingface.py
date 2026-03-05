@@ -1,5 +1,6 @@
 """HuggingFace adapter implementation for sparse attention."""
 
+import os
 import random
 import string
 from contextlib import contextmanager
@@ -15,7 +16,6 @@ from ..sparse_attention.research_attention.base import ResearchAttention
 from .base import ModelAdapter, Request, RequestResponse
 from .model_servers.huggingface import ModelServerHF
 from .utils.config import ModelServerConfig
-import os
 
 INT_MAX = 2**31 - 1
 
@@ -72,7 +72,9 @@ class ModelAdapterHF(ModelAdapter):
                 except (IndexError, ValueError):
                     gpu_id = None
 
-        model_server = ModelServerHF(ModelServerConfig(model_registry_path=self.model_registry_path))
+        model_server = ModelServerHF(
+            ModelServerConfig(model_registry_path=self.model_registry_path)
+        )
         self.model = model_server.get_model(self.model_name, gpu_id, self.model_kwargs)
         self.tokenizer = model_server.get_tokenizer(
             self.model_name, self.tokenizer_kwargs

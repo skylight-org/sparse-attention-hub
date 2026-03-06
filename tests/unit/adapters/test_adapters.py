@@ -218,6 +218,32 @@ class TestModelAdapterHF:
             "test-model", torch_dtype=torch.float16
         )
         assert adapter.device == "cpu"
+
+    @patch("sparse_attention_hub.adapters.huggingface.ModelServerHF")
+    def test_allow_unregistered_models_plumbed(self, mock_model_server_hf) -> None:
+        """ModelAdapterHF should forward allow_unregistered_models into ModelServerConfig."""
+        mock_tokenizer_instance = Mock()
+        mock_tokenizer_instance.pad_token = "<PAD>"
+        mock_tokenizer_instance.eos_token = "<EOS>"
+        mock_model_server = Mock()
+        mock_model_server.get_tokenizer.return_value = mock_tokenizer_instance
+        mock_model_server.get_model.return_value = Mock()
+        mock_model_server_hf.return_value = mock_model_server
+
+        adapter = ModelAdapterHF(
+            sparse_attention_config=self.sparse_attention_config,
+            model_name="test-model",
+            model_registry_path="/tmp/registry.yaml",
+            allow_unregistered_models=False,
+            model_kwargs={"torch_dtype": torch.float16},
+        )
+
+        mock_model_server_hf.assert_called_once()
+        config_arg = mock_model_server_hf.call_args[0][0]
+        assert config_arg.model_registry_path == "/tmp/registry.yaml"
+        assert config_arg.allow_unregistered_models is False
+        assert adapter.tokenizer.pad_token == "<PAD>"
+        assert adapter.torch_dtype == torch.float16
         assert adapter.torch_dtype == torch.float16
         # Check that adapter was created successfully
         assert adapter is not None

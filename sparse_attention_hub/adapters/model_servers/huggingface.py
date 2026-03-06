@@ -42,6 +42,8 @@ class ModelServerHF(ModelServer):
         self._model_registry_path: Optional[str] = None
 
     def _get_model_registry(self) -> Dict[str, RegistryEntry]:
+        # Cache keyed on registry_path; callers must update config.model_registry_path
+        # before invoking again to invalidate the cached registry.
         registry_path = getattr(self.config, "model_registry_path", None)
         if not registry_path:
             return {}

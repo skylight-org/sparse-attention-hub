@@ -10,6 +10,14 @@
 #         constructor: <ConfigClassName or dotted.path.Class>
 #         kwargs:
 #           <kw>: <value>
+#
+# The constructor block also accepts the alias keys type/args in place of
+# constructor/kwargs if preferred.
+#
+# Note: The three Ministral entries below share the same model_class and
+# quantization defaults. They are repeated explicitly to keep the registry
+# flat; if more variants are added, consider factoring this pattern or noting
+# deviations inline.
 
 models:
   mistralai/Ministral-3-8B-Instruct-2512:

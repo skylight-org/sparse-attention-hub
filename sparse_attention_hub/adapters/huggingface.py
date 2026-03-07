@@ -1,6 +1,7 @@
 """HuggingFace adapter implementation for sparse attention."""
 
 import random
+import re
 import string
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
@@ -123,13 +124,22 @@ class ModelAdapterHF(ModelAdapter):
         context, questions = self._preprocess_context_and_questions(
             context, questions, answer_prefix
         )
+        # DEBUG LOGGING: Print the exact data passed to the model
+        print("\n[PROMPT DEBUG] --- Prompt Data ---", flush=True)
+        print(f"Context: {context}", flush=True)
+        print(f"Questions: {questions}", flush=True)
+        print(f"Answer Prefix: {answer_prefix}", flush=True)
+        print("[PROMPT DEBUG] --- End Prompt Data ---\n", flush=True)
 
         context_tokens = self.tokenizer.encode(context, return_tensors="pt")
         context_tokens = context_tokens[
             :, :max_context_length
         ]  # truncate context to max_context_length
-        if self.device is not None:
-            context_tokens = context_tokens.to(self.device)
+        # if self.device is not None:
+        #     context_tokens = context_tokens.to(self.device)
+        input_device = self.model.device if hasattr(self.model, 'device') else self.device
+        if input_device is not None:
+            context_tokens = context_tokens.to(input_device)
         print(f"Context tokens: {context_tokens.shape}")
         responses: List[str] = []
 
@@ -139,17 +149,17 @@ class ModelAdapterHF(ModelAdapter):
                 sparse_meta_data: Dict[str, Any] = {}
 
                 question_tokens = self.tokenizer.encode(question, return_tensors="pt")
-                if self.device is not None:
-                    question_tokens = question_tokens.to(self.device)
-
-                context_outputs = self.model(
-                    context_tokens,
-                    past_key_values=None,
-                    use_cache=True,
-                    sparse_meta_data=sparse_meta_data,
-                )
+                if input_device is not None:
+                    question_tokens = question_tokens.to(input_device)
 
                 if self._sparse_attention_available:
+                    context_outputs = self.model(
+                        context_tokens,
+                        past_key_values=None,
+                        use_cache=True,
+                        sparse_meta_data=sparse_meta_data,
+                    )
+
                     with self.enable_sparse_mode():
                         response_text = self._generate_response(
                             question_tokens,
@@ -158,9 +168,13 @@ class ModelAdapterHF(ModelAdapter):
                             generation_kwargs,
                             **kwargs,
                         )
-                        responses.append(response_text)
                 else:
-                    # Dense-only mode: process questions with dense attention
+                    context_outputs = self.model(
+                        context_tokens,
+                        past_key_values=None,
+                        use_cache=True,
+                    )
+
                     response_text = self._generate_response(
                         question_tokens,
                         context_outputs,
@@ -168,7 +182,8 @@ class ModelAdapterHF(ModelAdapter):
                         generation_kwargs,
                         **kwargs,
                     )
-                    responses.append(response_text)
+
+                responses.append(response_text)
 
         if isinstance(request.questions, str):
             return RequestResponse(responses=responses[0])
@@ -366,64 +381,120 @@ class ModelAdapterHF(ModelAdapter):
         generation_kwargs: Dict[str, Any],
         **kwargs: Dict[str, Any],
     ) -> str:
-        """Generate text response using greedy decoding based on kvpress pipeline approach.
+        """Generate text response.
 
-        Args:
-            question_tokens: The tokenized question
-            context_outputs: The model outputs from processing the context
-            max_new_tokens: Maximum number of new tokens to generate
-
-        Returns:
-            Generated text response
-
-        TODO:
-            move to huggingface genera`te() to leverage all possible generations
-            pass generation_kwargs appropriately
+        Important for Qwen3.5 hybrid models:
+        after context prefill, feed the question tokens one-by-one so the
+        linear-attention cached path uses seq_len == 1.
         """
         if self.tokenizer is None:
             raise ValueError("Tokenizer not initialized")
 
         max_new_tokens: int = generation_kwargs.get("max_new_tokens", 50)
-        context_length: int = context_outputs.past_key_values.get_seq_length()
-
-        position_ids = torch.arange(
-            context_length,
-            context_length + question_tokens.shape[1],
-            device=self.model.device,
-        ).unsqueeze(0)
-
-        with torch.no_grad():
-            question_outputs = self.model(
-                input_ids=question_tokens,
-                past_key_values=context_outputs.past_key_values,
-                position_ids=position_ids,
-                logits_to_keep=1,
-                sparse_meta_data=sparse_meta_data,
-            )
-
-        position_ids = position_ids[:, -1:] + 1
-        generated_ids = [question_outputs.logits[0, -1].argmax()]
 
         should_stop_token_ids = self.model.generation_config.eos_token_id
         if not isinstance(should_stop_token_ids, list):
             should_stop_token_ids = [should_stop_token_ids]
 
-        for i in tqdm(range(max_new_tokens - 1), disable=(max_new_tokens < 1000)):
-            with torch.no_grad():
-                outputs = self.model(
-                    input_ids=generated_ids[-1].unsqueeze(0).unsqueeze(0),
-                    past_key_values=context_outputs.past_key_values,
-                    position_ids=position_ids + i,
-                    sparse_meta_data=sparse_meta_data,
-                )
-                # TODO: support other forms of decoding
-                new_id = outputs.logits[0, -1].argmax()
-                generated_ids.append(new_id)
+        # Start from cached context state
+        past_key_values = context_outputs.past_key_values
 
-                if new_id.item() in should_stop_token_ids:
-                    break
+        # ------------------------------------------------------------------
+        # Step 1: consume the question/prefix ONE TOKEN AT A TIME
+        # ------------------------------------------------------------------
+        last_outputs = None
+
+        for idx in range(question_tokens.shape[1]):
+            step_input = question_tokens[:, idx:idx + 1]
+
+            model_kwargs = {
+                "input_ids": step_input,
+                "past_key_values": past_key_values,
+                "use_cache": True,
+                "logits_to_keep": 1,
+            }
+
+            # Only pass sparse_meta_data when sparse mode is actually enabled
+            if self._sparse_attention_available:
+                model_kwargs["sparse_meta_data"] = sparse_meta_data
+
+            with torch.no_grad():
+                last_outputs = self.model(**model_kwargs)
+
+            past_key_values = last_outputs.past_key_values
+
+        if last_outputs is None:
+            raise ValueError("Question tokens are empty; cannot generate response")
+
+        # ------------------------------------------------------------------
+        # Step 2: first generated token comes from the final question step
+        # ------------------------------------------------------------------
+        generated_ids = [last_outputs.logits[0, -1].argmax()]
+
+        if generated_ids[-1].item() in should_stop_token_ids:
+            answer = self.tokenizer.decode(
+                torch.stack(generated_ids), skip_special_tokens=True
+            )
+            cleaned_answer = self._postprocess_answer(answer, generation_kwargs)
+            print(
+                f"[Model {self.model_name}] Decoded response: {cleaned_answer}",
+                flush=True,
+            )
+            return cleaned_answer
+
+        # ------------------------------------------------------------------
+        # Step 3: continue normal autoregressive generation, one token at a time
+        # ------------------------------------------------------------------
+        for _ in tqdm(range(max_new_tokens - 1), disable=(max_new_tokens < 1000)):
+            model_kwargs = {
+                "input_ids": generated_ids[-1].unsqueeze(0).unsqueeze(0),
+                "past_key_values": past_key_values,
+                "use_cache": True,
+            }
+
+            if self._sparse_attention_available:
+                model_kwargs["sparse_meta_data"] = sparse_meta_data
+
+            with torch.no_grad():
+                outputs = self.model(**model_kwargs)
+
+            past_key_values = outputs.past_key_values
+            new_id = outputs.logits[0, -1].argmax()
+            generated_ids.append(new_id)
+
+            if new_id.item() in should_stop_token_ids:
+                break
 
         answer: str = self.tokenizer.decode(
             torch.stack(generated_ids), skip_special_tokens=True
         )
-        return answer
+        cleaned_answer = self._postprocess_answer(answer, generation_kwargs)
+        print(
+            f"[Model {self.model_name}] Decoded response: {cleaned_answer}",
+            flush=True,
+        )
+        return cleaned_answer
+
+    def _postprocess_answer(
+        self, answer: str, generation_kwargs: Dict[str, Any]
+    ) -> str:
+        """Clean up decoded text to reduce downstream parsing issues.
+
+        - Optionally strip markdown/bold markers.
+        - Optionally extract the first digit sequence.
+        """
+
+        strip_markdown: bool = generation_kwargs.get("strip_markdown", True)
+        digits_only: bool = generation_kwargs.get("digits_only", True)
+
+        cleaned = answer.strip()
+
+        if strip_markdown:
+            cleaned = cleaned.replace("**", "")
+
+        if digits_only:
+            matches = re.findall(r"\d+", cleaned)
+            if matches:
+                cleaned = matches[0]
+
+        return cleaned

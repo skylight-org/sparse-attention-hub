@@ -56,7 +56,12 @@ class ModelServerHF(ModelServer):
             model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
             # Handle device placement
-            if gpu_id is not None:
+            if "device_map" in model_kwargs:
+                self.logger.debug(
+                    f"Model {model_name} loaded with device_map='{model_kwargs['device_map']}', "
+                    f"skipping manual device placement"
+                )
+            elif gpu_id is not None:
                 if torch.cuda.is_available():
                     device: torch.device = torch.device(f"cuda:{gpu_id}")
                     self.logger.debug(f"Moving model {model_name} to device: {device}")

@@ -105,13 +105,13 @@ class ModelAdapterHF(ModelAdapter):
         """
         max_context_length: int = request_kwargs.get("max_context_length", INT_MAX)
         max_new_tokens: int = generation_kwargs.get("max_new_tokens", INT_MAX)
-        # print(
-        #     " Processing request with max_context_length: ",
-        #     max_context_length,
-        #     " and max_new_tokens: ",
-        #     max_new_tokens,
-        #     flush=True,
-        # )
+        print(
+            " Processing request with max_context_length: ",
+            max_context_length,
+            " and max_new_tokens: ",
+            max_new_tokens,
+            flush=True,
+        )
 
         questions: List[str] = (
             request.questions
@@ -124,12 +124,6 @@ class ModelAdapterHF(ModelAdapter):
         context, questions = self._preprocess_context_and_questions(
             context, questions, answer_prefix
         )
-        # # DEBUG LOGGING: Print the exact data passed to the model
-        # print("\n[PROMPT DEBUG] --- Prompt Data ---", flush=True)
-        # print(f"Context: {context}", flush=True)
-        # print(f"Questions: {questions}", flush=True)
-        # print(f"Answer Prefix: {answer_prefix}", flush=True)
-        # print("[PROMPT DEBUG] --- End Prompt Data ---\n", flush=True)
 
         context_tokens = self.tokenizer.encode(context, return_tensors="pt")
         context_tokens = context_tokens[
@@ -140,7 +134,7 @@ class ModelAdapterHF(ModelAdapter):
         input_device = self.model.device if hasattr(self.model, 'device') else self.device
         if input_device is not None:
             context_tokens = context_tokens.to(input_device)
-        # print(f"Context tokens: {context_tokens.shape}")
+        print(f"Context tokens: {context_tokens.shape}")
         responses: List[str] = []
 
         self.model.eval()
@@ -436,10 +430,10 @@ class ModelAdapterHF(ModelAdapter):
                 torch.stack(generated_ids), skip_special_tokens=True
             )
             cleaned_answer = self._postprocess_answer(answer, generation_kwargs)
-            # print(
-            #     f"[Model {self.model_name}] Decoded response: {cleaned_answer}",
-            #     flush=True,
-            # )
+            print(
+                f"[Model {self.model_name}] Decoded response: {cleaned_answer}",
+                flush=True,
+            )
             return cleaned_answer
 
         # ------------------------------------------------------------------
@@ -468,33 +462,5 @@ class ModelAdapterHF(ModelAdapter):
         answer: str = self.tokenizer.decode(
             torch.stack(generated_ids), skip_special_tokens=True
         )
-        cleaned_answer = self._postprocess_answer(answer, generation_kwargs)
-        # print(
-        #     f"[Model {self.model_name}] Decoded response: {cleaned_answer}",
-        #     flush=True,
-        # )
-        return cleaned_answer
 
-    def _postprocess_answer(
-        self, answer: str, generation_kwargs: Dict[str, Any]
-    ) -> str:
-        """Clean up decoded text to reduce downstream parsing issues.
-
-        - Optionally strip markdown/bold markers.
-        - Optionally extract the first digit sequence.
-        """
-
-        strip_markdown: bool = generation_kwargs.get("strip_markdown", True)
-        digits_only: bool = generation_kwargs.get("digits_only", True)
-
-        cleaned = answer.strip()
-
-        if strip_markdown:
-            cleaned = cleaned.replace("**", "")
-
-        if digits_only:
-            matches = re.findall(r"\d+", cleaned)
-            if matches:
-                cleaned = matches[0]
-
-        return cleaned
+        return answer

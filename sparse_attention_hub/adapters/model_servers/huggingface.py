@@ -56,8 +56,6 @@ class ModelServerHF(ModelServer):
             model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
             # Handle device placement
-            # If device_map is specified (e.g., "auto"), accelerate handles placement
-            # and we must NOT call .to() — it breaks accelerate's dispatch hooks
             if "device_map" in model_kwargs:
                 self.logger.debug(
                     f"Model {model_name} loaded with device_map='{model_kwargs['device_map']}', "

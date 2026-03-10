@@ -404,6 +404,9 @@ class ModelAdapterHF(ModelAdapter):
         last_outputs = None
 
         if self.hybrid:
+            # TODO(sahil, P1): add regression coverage for hybrid models that
+            # verifies question/prefix tokens are consumed one-by-one after
+            # context prefill, while non-hybrid models keep the batched path.
             # ------------------------------------------------------------------
             # Step 1: consume the question/prefix ONE TOKEN AT A TIME
             # ------------------------------------------------------------------

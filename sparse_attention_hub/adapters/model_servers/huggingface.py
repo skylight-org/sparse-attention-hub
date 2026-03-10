@@ -131,17 +131,10 @@ class ModelServerHF(ModelServer):
                     raise
 
             # Handle device placement
-<<<<<<< hybrid-model-integration
             if "device_map" in model_kwargs:
                 self.logger.debug(
                     f"Model {model_name} loaded with device_map='{model_kwargs['device_map']}', "
                     f"skipping manual device placement"
-=======
-            # If device_map is set, placement may be handled by accelerate/sharding.
-            if effective_kwargs.get("device_map") is not None:
-                self.logger.debug(
-                    f"device_map is set for {model_name}. Skipping explicit .to(device) placement"
->>>>>>> main
                 )
             elif gpu_id is not None:
                 if torch.cuda.is_available():

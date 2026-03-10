@@ -91,7 +91,7 @@ def read_overall_score(metrics_path: Path) -> float | None:
 def main() -> None:
     """Run a basic sparse attention benchmark example."""
     model_name: str = "Qwen/Qwen3-4B-Instruct-2507"
-    device: int = 0
+    device: str = "cuda:0"
     sparse_attention_config: ResearchAttentionConfig = ResearchAttentionConfig(masker_configs=[
         SinkMaskerConfig(sink_size=128),
         LocalMaskerConfig(window_size=128),

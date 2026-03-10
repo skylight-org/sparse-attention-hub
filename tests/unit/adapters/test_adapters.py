@@ -244,7 +244,6 @@ class TestModelAdapterHF:
         assert config_arg.allow_unregistered_models is False
         assert adapter.tokenizer.pad_token == "<PAD>"
         assert adapter.torch_dtype == torch.float16
-        assert adapter.torch_dtype == torch.float16
         # Check that adapter was created successfully
         assert adapter is not None
 

@@ -19,6 +19,9 @@
 # flat; if more variants are added, consider factoring this pattern or noting
 # deviations inline.
 
+# TODO(sahil, p2): Verify whether `transformers.Mistral3ForConditionalGeneration` is
+# importable via the public API and replace the internal module path below if so.
+# Internal paths are version-sensitive and may break on transformers upgrades.
 models:
   mistralai/Ministral-3-8B-Instruct-2512:
     model_class: transformers.models.mistral3.modeling_mistral3.Mistral3ForConditionalGeneration

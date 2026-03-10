@@ -131,9 +131,9 @@ class ModelServerHF(ModelServer):
                     raise
 
             # Handle device placement
-            if "device_map" in model_kwargs:
+            if effective_kwargs.get("device_map") is not None:
                 self.logger.debug(
-                    f"Model {model_name} loaded with device_map='{model_kwargs['device_map']}', "
+                    f"Model {model_name} loaded with device_map='{effective_kwargs['device_map']}', "
                     f"skipping manual device placement"
                 )
             elif gpu_id is not None:

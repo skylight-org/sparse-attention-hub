@@ -60,11 +60,7 @@ class ModelAdapterHF(ModelAdapter):
         # Handle dense-only mode when sparse_attention_config is None
         self._sparse_attention_available: bool = sparse_attention_config is not None
         # Control token-by-token question processing (for hybrid models)
-        if hybrid is not None:
-            self.hybrid = hybrid
-        else:
-            self.hybrid = self._sparse_attention_available
-        # create model and tokenizer
+        self.hybrid = hybrid if hybrid is not None else False       
 
         # Convert device string to GPU ID for ModelServer
         gpu_id: Optional[int] = None

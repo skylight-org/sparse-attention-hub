@@ -183,6 +183,10 @@ def create_sampling_mask_with_per_head_budget(
 
     return sampling_mask
 
+def apply_softcap(scores: torch.Tensor, softcap: Optional[float]):
+    if softcap is None:
+        return scores
+    return softcap * torch.tanh(scores / softcap)
 
 def _compute_masked_exp_attention_weights(
     queries: torch.Tensor,
@@ -192,6 +196,7 @@ def _compute_masked_exp_attention_weights(
     sparse_attention_mask: Mask,
     dropout: float = 0.0,
     training: bool = False,
+    softcap: Optional[float] = None,
 ) -> torch.Tensor:
     """Compute masked attention weights (common logic for numerator and denominator).
 
@@ -217,6 +222,9 @@ def _compute_masked_exp_attention_weights(
     k = key_states.to(torch.float32)
     raw_attention_weights: torch.Tensor = torch.matmul(q, k.transpose(2, 3)) * scaling
 
+    # Gemma softcap
+    raw_attention_weights = apply_softcap(raw_attention_weights, softcap)
+    
     if attention_mask is not None:
         raw_attention_weights = raw_attention_weights + attention_mask[
             :, :, :, : key_states.shape[-2]
@@ -240,7 +248,7 @@ def _compute_masked_exp_attention_weights(
     return exp_attention_weights
 
 
-def _get_attention_denominator(exp_attention_weights: torch.Tensor) -> torch.Tensor:
+def _get_attention_denominator(exp_attention_weights: torch.Tensor, softcap: Optional[float] = None) -> torch.Tensor:
     """Get attention denominator from pre-computed exponential attention weights.
 
     Args:
@@ -255,6 +263,7 @@ def _get_attention_denominator(exp_attention_weights: torch.Tensor) -> torch.Ten
 def _get_attention_numerator(
     exp_attention_weights: torch.Tensor,
     value_states: torch.Tensor,
+    softcap: Optional[float] = None
 ) -> torch.Tensor:
     """Get attention numerator from pre-computed exponential attention weights and prepared values.
 
@@ -276,7 +285,8 @@ def get_attention_denominator(
     scaling: float,
     dropout: float,
     sparse_attention_mask: Mask,
-    **kwargs: Dict[str, Any],
+    softcap: Optional[float] = None,
+    **kwargs: Dict[str, Any],    
 ) -> torch.Tensor:
     """Get masked attention denominator.
 
@@ -302,6 +312,7 @@ def get_attention_denominator(
         sparse_attention_mask=sparse_attention_mask,
         dropout=dropout,
         training=training,
+        softcap=softcap,
     )
 
     return _get_attention_denominator(exp_attention_weights)
@@ -316,6 +327,7 @@ def get_attention_numerator(
     scaling: float,
     dropout: float,
     sparse_attention_mask: Mask,
+    softcap: Optional[float] = None,
     **kwargs: Dict[str, Any],
 ) -> torch.Tensor:
     """Get masked attention numerator.
@@ -343,6 +355,7 @@ def get_attention_numerator(
         sparse_attention_mask=sparse_attention_mask,
         dropout=dropout,
         training=training,
+        softcap=softcap,
     )
 
     # Prepare values by applying key-value grouping
@@ -413,6 +426,7 @@ def get_masked_attention_output(
     scaling: float,
     dropout: float,
     sparse_attention_mask: Mask,
+    softcap: Optional[float] = None,
     return_attention_weights: bool = False,
     **kwargs: Dict[str, Any],
 ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
@@ -448,6 +462,7 @@ def get_masked_attention_output(
         sparse_attention_mask=sparse_attention_mask,
         dropout=dropout,
         training=training,
+        softcap=softcap,
     )
 
     # Prepare values by applying key-value grouping
@@ -457,8 +472,12 @@ def get_masked_attention_output(
     )
 
     # Use internal helpers with pre-computed weights
-    num: torch.Tensor = _get_attention_numerator(exp_attention_weights, value_states)
-    den: torch.Tensor = _get_attention_denominator(exp_attention_weights)
+    num: torch.Tensor = _get_attention_numerator(
+        exp_attention_weights, value_states, softcap=softcap
+    )
+    den: torch.Tensor = _get_attention_denominator(
+        exp_attention_weights, softcap=softcap
+    )
 
     num, den, exp_attention_weights = apply_sink_bias(
         num=num,

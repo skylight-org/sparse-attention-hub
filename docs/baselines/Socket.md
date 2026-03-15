@@ -1,4 +1,4 @@
-# SOCKET: Soft Collision Kernel Estimator for Sparse Attention
+# SOCKET: Soft Collision Kernel EsTimator for Sparse Attention
 
 ## 1. Overview
 
@@ -26,13 +26,13 @@ Key properties:
 
 | Symbol | Description |
 |------|-------------|
-| \( q \) | Query vector |
-| \( k_i \) | Key vector at position \( i \) |
-| \( v_i \) | Value vector at position \( i \) |
-| \( L \) | Number of hash tables |
-| \( P \) | Number of hyperplanes per table |
-| \( R = 2^P \) | Number of buckets per table |
-| \( M \) | Final sparse attention budget |
+|  q  | Query vector |
+| $k_i$  | Key vector at position \( i \) |
+|  $v_i$  | Value vector at position \( i \) |
+|  L  | Number of hash tables |
+|  P  | Number of hyperplanes per table |
+|  R = $2^P$ | Number of buckets per table |
+|  M  | Final sparse attention budget |
 
 ---
 
@@ -209,3 +209,6 @@ Our Results with model - meta-llama/Llama-3.1-8B-Instruct:
 | **multikey_3** |       92         |        100         |        100         |  
 
 
+## References
+
+[1] Joshi, Sahil; Chowdhury, Agniva; Bellinger, Wyatt; Kanakamedala, Amar; Singh, Ekam; Le, Hoang Anh Duy; Desai, Aditya; Shrivastava, Anshumali (2026). SOCKET: Soft Collision Kernel Estimator for Sparse Attention. arXiv preprint arXiv:2602.06283.

@@ -111,7 +111,7 @@ def attention_mask_to_allowed_prob(
     attention_mask: torch.Tensor, N: int
 ) -> torch.Tensor:
     """
-    Convert attention_mask to allowed-probabilities in [0,1], shape [B,1,*,K].
+    Convert attention_mask to allowed-probabilities in [0,1], shape [B,1,*,N].
 
     Heuristics:
       - bool masks:          0 => allow (1.0), 1 => forbid (0.0)
@@ -142,9 +142,16 @@ def topk_soft_collision_scores_blockwise(
     """
     B, H, Q, L, R = q_probs.shape
     _, _, _L, N = key_buckets.shape
-    assert _L == L
-    assert v_mag.shape == (B, H, N)
-    assert allowed_bool.shape == (B, H, Q, N)
+    if _L != L:
+        raise ValueError(f"key_buckets shape mismatch: expected L={L}, got _L={_L}")
+    if v_mag.shape != (B, H, N):
+        raise ValueError(
+            f"v_mag shape mismatch: expected {(B, H, N)}, got {v_mag.shape}"
+        )
+    if allowed_bool.shape != (B, H, Q, N):
+        raise ValueError(
+            f"allowed_bool shape mismatch: expected {(B, H, Q, N)}, got {allowed_bool.shape}"
+        )
 
     device = q_probs.device
 

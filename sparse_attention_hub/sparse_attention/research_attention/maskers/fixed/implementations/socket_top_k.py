@@ -68,11 +68,6 @@ class SocketMasker(TopKMasker):
     def __init__(self, config: SocketMaskerConfig) -> None:
         super().__init__(config)
 
-        if config.K <= 0:
-            raise ValueError("K must be positive")
-        if config.L <= 0:
-            raise ValueError("L must be positive")
-
         self.P: int = int(config.K)
         self.L: int = int(config.L)
         self.heavy_size = config.heavy_size

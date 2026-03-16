@@ -1,4 +1,4 @@
-"""Configuration builder for Quest TopK attention."""
+"""Configuration builder for SOCKET TopK attention."""
 
 from typing import Dict, List, Optional, Tuple
 
@@ -81,7 +81,7 @@ class SocketTopKConfigBuilder(BaseConfigBuilder):
                     "tau": tune.grid_search([0.3, 0.4, 0.5, 0.7]),
                 }
                 # Set validity constraint to use the correct memory_objective for comparison
-                config.validity_constraint = lambda config: True
+                config.validity_constraint = lambda cfg: True
                 # Set objective function
                 config.objective = sparsity_objective
 

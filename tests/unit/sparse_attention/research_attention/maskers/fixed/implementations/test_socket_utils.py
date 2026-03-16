@@ -310,3 +310,33 @@ class TestSocketUtils:
         assert torch.all(idx < (N - 3))
         # Scores should be finite (since enough allowed exist)
         assert torch.all(torch.isfinite(scores))
+
+
+def test_repeat_kv_and_get_num_key_value_groups_gqa_mqa():
+    """Test GQA/MQA path: H_k != H, repeat_kv and _get_num_key_value_groups are exercised."""
+    from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.socket_top_k import (
+        SocketMaskerConfig, SocketMasker
+    )
+    from sparse_attention_hub.sparse_attention.utils.mask import Mask
+    # H = 4, H_k = 2
+    B, H, H_k, N, D = 1, 4, 2, 8, 8
+    config = SocketMaskerConfig(heavy_size=0.25, K=2, L=1)
+    masker = SocketMasker.create_from_config(config)
+    keys = torch.randn(B, H_k, N, D)
+    values = torch.randn(B, H_k, N, D)
+    queries = torch.randn(B, H, 3, D)
+    attention_mask = torch.zeros(B, 1, 1, N)
+    dense_prev = torch.zeros(B, H, 3, N)
+    previous_mask = Mask.create_mask_from_dense_mask((B, H, 3, N), dense_prev, dtype=torch.float32)
+    mask = masker.add_mask(
+        keys=keys,
+        queries=queries,
+        values=values,
+        attention_mask=attention_mask,
+        scaling=1.0,
+        dropout=0.0,
+        sparse_meta_data={"num_key_value_groups": H_k},
+        previous_mask=previous_mask,
+    )
+    dense = mask.get_dense_mask()
+    assert dense.shape[1] == H

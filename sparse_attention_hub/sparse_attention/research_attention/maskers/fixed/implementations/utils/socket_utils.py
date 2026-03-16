@@ -108,7 +108,7 @@ def soft_hash(
 
 
 def attention_mask_to_allowed_prob(
-    attention_mask: torch.Tensor, K: int
+    attention_mask: torch.Tensor, N: int
 ) -> torch.Tensor:
     """
     Convert attention_mask to allowed-probabilities in [0,1], shape [B,1,*,K].
@@ -117,7 +117,7 @@ def attention_mask_to_allowed_prob(
       - bool masks:          0 => allow (1.0), 1 => forbid (0.0)
       - additive float mask: >=0 => allow (1.0), <0 => forbid (0.0)
     """
-    am = attention_mask[..., :K]
+    am = attention_mask[..., :N]
     if am.dtype == torch.bool:
         allowed = (am == 0).to(torch.float32)
     else:
@@ -170,6 +170,11 @@ def topk_soft_collision_scores_blockwise(
             buckets_l = key_buckets[:, :, table_idx, s:e].to(torch.long)  # [B,H,nb]
             idx = buckets_l.unsqueeze(2).expand(B, H, Q, nb)  # [B,H,Q,nb]
             collision_block += torch.gather(probs_l, dim=-1, index=idx)
+
+        # Double-gating risk: allowed_bool blocks disallowed positions here via masked_fill,
+        # and downstream code may multiply by allowed_prob again. If allowed_prob is not derived
+        # from the same mask as allowed_bool, this can zero out tokens that were already selected
+        # and merged. Here, we have ensure both gating paths are derived from the same mask.
 
         score_block = collision_block * v_mag_f[:, :, s:e].unsqueeze(2)  # float32
         score_block = score_block.masked_fill(~allowed_bool[:, :, :, s:e], -torch.inf)

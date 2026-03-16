@@ -39,6 +39,15 @@ class SocketMaskerConfig(TopKMaskerConfig):
     L: int = 1
     tau: float = 0.3
 
+    def __post_init__(self):
+        super().__post_init__()
+        if self.K <= 0:
+            raise ValueError("K must be positive")
+        if self.L <= 0:
+            raise ValueError("L must be positive")
+        if not isinstance(self.tau, (float, int)) or self.tau <= 0:
+            raise ValueError(f"tau must be positive, got {self.tau}")
+
 
 @MaskerRegistry.register(SocketMaskerConfig)
 class SocketMasker(TopKMasker):
@@ -49,6 +58,11 @@ class SocketMasker(TopKMasker):
       3) For each key j, compute C_j(q) = sum_l p_l(bucket_l(j)).
       4) Score_j = C_j(q) * ||v_j||_2 (gate by attention_mask).
       5) Pick top-M by score and return mask.
+
+    Note: _planes_cache is instance-level and keyed by dtype, device, etc. If a single masker instance
+    is called with tensors of different dtype across calls (e.g., bf16 in one layer, fp32 in another),
+    it will allocate separate plane tensors with the same seed. This is correct but may surprise users
+    who assume all tables use exactly the same planes regardless of dtype.
     """
 
     def __init__(self, config: SocketMaskerConfig) -> None:

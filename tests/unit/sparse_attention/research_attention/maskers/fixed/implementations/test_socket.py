@@ -42,25 +42,12 @@ class TestSocketMaskerImplementation:
 
     def test_socket_masker_invalid_tau_raises(self):
         """Non-positive tau should raise a ValueError during hashing."""
-        config = SocketMaskerConfig(
-            heavy_size=0.1,
-            K=2,
-            L=1,
-            tau=0.0,
-        )
-        masker = SocketMasker.create_from_config(config)
-        keys, queries, values, attention_mask, previous_mask = self._make_dummy_inputs()
-
-        with pytest.raises(ValueError, match=r"tau must be > 0"):
-            masker.add_mask(
-                keys=keys,
-                queries=queries,
-                values=values,
-                attention_mask=attention_mask,
-                scaling=1.0,
-                dropout=0.0,
-                sparse_meta_data={},
-                previous_mask=previous_mask,
+        with pytest.raises(ValueError, match=r"tau must be positive"):
+            SocketMaskerConfig(
+                heavy_size=0.1,
+                K=2,
+                L=1,
+                tau=0.0,
             )
 
     def test_socket_masker_creation(self):

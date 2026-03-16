@@ -315,9 +315,11 @@ class TestSocketUtils:
 def test_repeat_kv_and_get_num_key_value_groups_gqa_mqa():
     """Test GQA/MQA path: H_k != H, repeat_kv and _get_num_key_value_groups are exercised."""
     from sparse_attention_hub.sparse_attention.research_attention.maskers.fixed.implementations.socket_top_k import (
-        SocketMaskerConfig, SocketMasker
+        SocketMasker,
+        SocketMaskerConfig,
     )
     from sparse_attention_hub.sparse_attention.utils.mask import Mask
+
     # H = 4, H_k = 2
     B, H, H_k, N, D = 1, 4, 2, 8, 8
     config = SocketMaskerConfig(heavy_size=0.25, K=2, L=1)
@@ -327,7 +329,9 @@ def test_repeat_kv_and_get_num_key_value_groups_gqa_mqa():
     queries = torch.randn(B, H, 3, D)
     attention_mask = torch.zeros(B, 1, 1, N)
     dense_prev = torch.zeros(B, H, 3, N)
-    previous_mask = Mask.create_mask_from_dense_mask((B, H, 3, N), dense_prev, dtype=torch.float32)
+    previous_mask = Mask.create_mask_from_dense_mask(
+        (B, H, 3, N), dense_prev, dtype=torch.float32
+    )
     mask = masker.add_mask(
         keys=keys,
         queries=queries,

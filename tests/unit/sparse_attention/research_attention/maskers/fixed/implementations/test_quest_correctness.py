@@ -309,11 +309,34 @@ def _effective_ratio(past_len: int, page_size: int, ratio: float) -> float:
 
 @pytest.fixture
 def original_attention(
-    test_config: LlamaConfig, test_params: Dict[str, Any]
+    request: pytest.FixtureRequest, test_config: LlamaConfig, test_params: Dict[str, Any]
 ) -> nn.Module:
     """
     Build a LlamaAttention and monkeypatch its forward with the upstream Quest implementation.
     """
+    # Quest's upstream implementation calls `apply_rotary_pos_emb` with an older positional
+    # signature where the 5th positional argument is `position_ids`. Newer Transformers
+    # versions interpret the 5th positional argument as `unsqueeze_dim` (an int), causing:
+    # `TypeError: unsqueeze(): argument 'dim' must be int, not Tensor`.
+    #
+    # Patch in a tiny compatibility shim for this test only.
+    from transformers.models.llama import modeling_llama
+
+    original_apply_rotary = modeling_llama.apply_rotary_pos_emb
+
+    def _apply_rotary_pos_emb_compat(*args: Any, **kwargs: Any):
+        if len(args) == 5 and torch.is_tensor(args[4]) and "unsqueeze_dim" not in kwargs:
+            q, k, cos, sin, _position_ids = args
+            return original_apply_rotary(q, k, cos, sin, unsqueeze_dim=1)
+        return original_apply_rotary(*args, **kwargs)
+
+    modeling_llama.apply_rotary_pos_emb = _apply_rotary_pos_emb_compat  # type: ignore[assignment]
+
+    def _restore_apply_rotary() -> None:
+        modeling_llama.apply_rotary_pos_emb = original_apply_rotary  # type: ignore[assignment]
+
+    request.addfinalizer(_restore_apply_rotary)
+
     quest_forward = _load_quest_forward()
 
     attn = LlamaAttention(config=test_config, layer_idx=32)

@@ -56,9 +56,7 @@ class ModelAdapterHF(ModelAdapter):
 
         raw_allow_unregistered: Any = kwargs.get("allow_unregistered_models", True)
         self.allow_unregistered_models: bool = (
-            raw_allow_unregistered
-            if isinstance(raw_allow_unregistered, bool)
-            else True
+            raw_allow_unregistered if isinstance(raw_allow_unregistered, bool) else True
         )
 
         # more useful parameters to store

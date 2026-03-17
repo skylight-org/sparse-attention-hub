@@ -309,7 +309,9 @@ def _effective_ratio(past_len: int, page_size: int, ratio: float) -> float:
 
 @pytest.fixture
 def original_attention(
-    request: pytest.FixtureRequest, test_config: LlamaConfig, test_params: Dict[str, Any]
+    request: pytest.FixtureRequest,
+    test_config: LlamaConfig,
+    test_params: Dict[str, Any],
 ) -> nn.Module:
     """
     Build a LlamaAttention and monkeypatch its forward with the upstream Quest implementation.
@@ -325,7 +327,11 @@ def original_attention(
     original_apply_rotary = modeling_llama.apply_rotary_pos_emb
 
     def _apply_rotary_pos_emb_compat(*args: Any, **kwargs: Any):
-        if len(args) == 5 and torch.is_tensor(args[4]) and "unsqueeze_dim" not in kwargs:
+        if (
+            len(args) == 5
+            and torch.is_tensor(args[4])
+            and "unsqueeze_dim" not in kwargs
+        ):
             q, k, cos, sin, _position_ids = args
             return original_apply_rotary(q, k, cos, sin, unsqueeze_dim=1)
         return original_apply_rotary(*args, **kwargs)

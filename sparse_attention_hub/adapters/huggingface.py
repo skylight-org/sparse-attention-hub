@@ -376,20 +376,7 @@ class ModelAdapterHF(ModelAdapter):
                 if name in original_implementations:
                     module.config._attn_implementation = original_implementations[name]
 
-    def _postprocess_answer(self, answer: str, generation_kwargs: Dict[str, Any]) -> str:
-        """Postprocess the generated answer.
-        
-        Args:
-            answer: The raw generated answer
-            generation_kwargs: Generation arguments
-            
-        Returns:
-            processed_answer: The processed answer
-        """
-        # Remove any leading special tokens
-        answer = answer.lstrip()
-        return answer
-
+    
     def _generate_response(
         self,
         question_tokens: torch.Tensor,

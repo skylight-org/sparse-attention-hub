@@ -376,7 +376,6 @@ class ModelAdapterHF(ModelAdapter):
                 if name in original_implementations:
                     module.config._attn_implementation = original_implementations[name]
 
-    
     def _generate_response(
         self,
         question_tokens: torch.Tensor,

@@ -97,9 +97,17 @@ class ModelAdapter(SparseAttentionAdapterInterface, ModelHubAdapterInterface, AB
         self.sparse_attention_config = sparse_attention_config
         self.sparse_attention = None
         self.kwargs = kwargs
+
+        has_sparse_masking = True
+        if sparse_attention_config is None:
+            has_sparse_masking = False
+        elif hasattr(sparse_attention_config, "masker_configs") and not sparse_attention_config.masker_configs:
+            # Defensive path: empty masker configs are equivalent to dense attention.
+            has_sparse_masking = False
+
         self.sparse_attention = (
             SparseAttention.create_from_config(self.sparse_attention_config)
-            if self.sparse_attention_config is not None
+            if has_sparse_masking
             else None
         )
 

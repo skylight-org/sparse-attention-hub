@@ -57,8 +57,8 @@ class ModelAdapterHF(ModelAdapter):
         )
         self.torch_dtype = self.model_kwargs.get("torch_dtype", torch.float32)
 
-        # Handle dense-only mode when sparse_attention_config is None
-        self._sparse_attention_available: bool = sparse_attention_config is not None
+        # Handle dense-only mode when sparse attention is absent or has no active maskers.
+        self._sparse_attention_available: bool = self.sparse_attention is not None
         # Control token-by-token question processing (for hybrid models)
         self.hybrid = hybrid if hybrid is not None else False
         # Convert device string to GPU ID for ModelServer

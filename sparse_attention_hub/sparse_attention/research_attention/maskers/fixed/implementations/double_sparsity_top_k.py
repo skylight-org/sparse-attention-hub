@@ -50,8 +50,9 @@ class DoubleSparsityTopKMaskerConfig(TopKMaskerConfig):
             )
 
         # Check if sorted_channel_file exists
+        print("DEBUG: checking file ->", self.sorted_channel_file)
         if not os.path.exists(self.sorted_channel_file):
-            raise ValueError(
+            raise FileNotFoundError(
                 f"sorted_channel_file does not exist: {self.sorted_channel_file}"
             )
 

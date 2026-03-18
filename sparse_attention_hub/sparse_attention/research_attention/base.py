@@ -26,6 +26,7 @@ class ResearchAttentionConfig(SparseAttentionConfig):
     """Configuration class for research attention mechanisms."""
 
     masker_configs: List[MaskerConfig]
+    softcap: Optional[float] = None  # Optional softcap for attention scores (e.g., Gemma uses 30.0)
 
 
 class ResearchAttention(SparseAttention):
@@ -86,6 +87,8 @@ class ResearchAttention(SparseAttention):
         Returns:
             Tuple of attention output and optional attention weights.
         """
+        softcap = kwargs.pop("softcap", self.sparse_attention_config.softcap)
+
         # Extract sparse_meta_data from kwargs
         if "sparse_meta_data" not in kwargs:
             raise ValueError(
@@ -143,6 +146,7 @@ class ResearchAttention(SparseAttention):
             scaling=scaling,
             dropout=dropout,
             sparse_attention_mask=sparse_attention_mask,
+            softcap=softcap,
             return_attention_weights=True,
             **kwargs,
         )

@@ -57,7 +57,8 @@ class ModelAdapterHF(ModelAdapter):
         )
         self.torch_dtype = self.model_kwargs.get("torch_dtype", torch.float32)
 
-        # Handle dense-only mode when sparse attention is absent or has no active maskers.
+        # Sparse backend is available whenever sparse_attention_config is not None.
+        # Note: empty masker_configs still use the custom backend (e.g., softcap) without masking.
         self._sparse_attention_available: bool = self.sparse_attention is not None
         # Control token-by-token question processing (for hybrid models)
         self.hybrid = hybrid if hybrid is not None else False
@@ -291,6 +292,7 @@ class ModelAdapterHF(ModelAdapter):
             The name of the registered attention function
         """
         if self._registered_attention_name is None:
+            print("REGISTERING CUSTOM ATTENTION")
             if not self._sparse_attention_available or self.sparse_attention is None:
                 raise RuntimeError(
                     "Cannot register attention function: sparse attention is not available"
@@ -346,7 +348,7 @@ class ModelAdapterHF(ModelAdapter):
             raise RuntimeError(
                 "Cannot enable sparse mode: sparse attention is not available"
             )
-
+        print("ENTERING SPARSE MODE")
         # Store original implementations to restore later
         original_implementations: Dict[str, str] = {}
 

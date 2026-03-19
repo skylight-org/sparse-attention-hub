@@ -265,7 +265,7 @@ class MagicPig(SamplingMasker):
             return cached_signatures, None
 
     def _compute_key_signatures(
-        self, keys, sparse_meta_data: Dict[Any, Any], layer_idx: int
+        self, keys: torch.Tensor, sparse_meta_data: Dict[Any, Any], layer_idx: int
     ) -> torch.Tensor:
         total_bits: int = self.lsh_l * self.lsh_k
         batch_size, num_heads, seq_len_keys, head_dim = keys.shape
@@ -279,7 +279,7 @@ class MagicPig(SamplingMasker):
             batch_size, num_heads, seq_len_keys, total_bits
         )
 
-        if self.signature_dtype == "int64":
+        if self.packing == "int64":
             keys_signatures = keys_signatures.to(torch.int64)
 
         return keys_signatures

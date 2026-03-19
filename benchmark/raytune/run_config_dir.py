@@ -38,7 +38,7 @@ from benchmark.benchmark_registry import create_benchmark_instance
 from sparse_attention_hub.adapters.huggingface import ModelAdapterHF
 from sparse_attention_hub.sparse_attention.research_attention import ResearchAttentionConfig
 from sparse_attention_hub.metric_logging.logger import MicroMetricLogger
-from utility import deserialize_sparse_config
+from config_builders.utility import deserialize_sparse_config
 
 
 
@@ -296,10 +296,10 @@ def progress_reporter(total_tasks: int, result_queue: RayQueue) -> None:
 
 def main(
     configs_dir: str,
-    benchmark_results_dir: str = "./benchmark_vt_full_10pct",
+    benchmark_results_dir: str = "/data/apdesai/DO_NOT_DELETE/sparse_attention_hub",
     max_new_tokens: int = 1000,
     max_context_length: int = 100000,
-    max_requests: int = 1000,
+    max_requests: int = 100,
     actors_per_gpu: Optional[int] = None
 ):
     """Ray-based parallel benchmark runner with efficient resource management.
@@ -383,7 +383,7 @@ def main(
     # Create adapter config
     adapter_config = {
         "adapter_name": "huggingface",
-        "model_kwargs": {"torch_dtype": torch.bfloat16},
+        "model_kwargs": {"torch_dtype": torch.bfloat16, "attn_implementation": "flash_attention_2"},
         "tokenizer_kwargs": {"padding_side": "left"}
     }
     

@@ -121,12 +121,21 @@ class ResearchAttention(SparseAttention):
                 **kwargs,
             )
 
+        layer_type: str = str(kwargs.get("layer_type", "unknown"))
+        print("DEBUG:", kwargs.get("layer_idx"), kwargs.get("layer_type"))
+        assert layer_type in ["full_attention", "sliding_attention", "unknown"]
         if MicroMetricLogger().is_metric_enabled("research_attention_density"):
-            MicroMetricLogger().log(
-                "research_attention_density",
-                sparse_attention_mask.get_density(),
-                metadata={"layer_idx": kwargs["layer_idx"]},
-            )
+            # Density is only meaningful for dense/full-attention layers.
+            if layer_type == "full_attention":
+                print("LOGGING DENSITY FOR LAYER:", kwargs.get("layer_idx"))
+                MicroMetricLogger().log(
+                    "research_attention_density",
+                    sparse_attention_mask.get_density(),
+                    metadata={
+                        "layer_idx": kwargs.get("layer_idx"),
+                        "layer_type": layer_type,
+                    },
+                )
 
         s_aux_raw: Any = kwargs.pop("s_aux", None)
         s_aux: Optional[torch.Tensor] = (
@@ -168,7 +177,10 @@ class ResearchAttention(SparseAttention):
             MicroMetricLogger().log(
                 "research_attention_output_error",
                 float(error.item()),
-                metadata={"layer_idx": kwargs["layer_idx"]},
+                metadata={
+                    "layer_idx": kwargs["layer_idx"],
+                    "layer_type": layer_type,
+                },
             )
 
         return attention_output, attention_weights

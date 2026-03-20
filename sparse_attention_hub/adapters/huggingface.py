@@ -229,6 +229,35 @@ class ModelAdapterHF(ModelAdapter):
             custom_attention_fn: Callable with correct signature for HuggingFace
         """
 
+        def infer_layer_type(module: torch.nn.Module, layer_idx: Optional[int]) -> str:
+            """Infer layer type for metric attribution.
+
+            Prefers explicit per-layer settings if available and falls back to
+            full_attention when metadata is unavailable.
+            """
+            explicit_layer_type: Any = getattr(module, "layer_type", None)
+            if isinstance(explicit_layer_type, str):
+                return explicit_layer_type
+
+            model_config: Any = getattr(module, "config", None)
+            if model_config is None:
+                model_config = getattr(self.model, "config", None)
+
+            if model_config is not None and layer_idx is not None:
+                layer_types: Any = getattr(model_config, "layer_types", None)
+                if (
+                    isinstance(layer_types, (list, tuple))
+                    and 0 <= layer_idx < len(layer_types)
+                    and isinstance(layer_types[layer_idx], str)
+                ):
+                    return layer_types[layer_idx]
+
+            is_sliding: Any = getattr(module, "is_sliding", None)
+            if isinstance(is_sliding, bool):
+                return "sliding_attention" if is_sliding else "full_attention"
+
+            return "full_attention"
+
         def custom_attention_callable(
             module: torch.nn.Module,
             queries: torch.Tensor,
@@ -240,10 +269,13 @@ class ModelAdapterHF(ModelAdapter):
             **kwargs: Dict[str, Any],
         ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
             """Custom attention callable for HuggingFace integration."""
+            layer_idx: Optional[int] = kwargs.get("layer_idx")
             if hasattr(module, "layer_idx"):
                 layer_idx = getattr(module, "layer_idx", None)
                 if layer_idx is not None:
                     kwargs["layer_idx"] = layer_idx
+
+            kwargs["layer_type"] = infer_layer_type(module, layer_idx)
 
             if "sparse_meta_data" in kwargs:
                 sparse_meta_data: Dict[Any, Any] = kwargs["sparse_meta_data"]

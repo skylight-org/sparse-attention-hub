@@ -15,6 +15,7 @@ from ..sparse_attention.research_attention.base import ResearchAttention
 from .base import ModelAdapter, Request, RequestResponse
 from .model_servers.huggingface import ModelServerHF
 from .utils.config import ModelServerConfig
+from sparse_attention_hub.adapters.utils.model_utils import infer_layer_type
 
 INT_MAX = 2**31 - 1
 
@@ -57,9 +58,8 @@ class ModelAdapterHF(ModelAdapter):
         )
         self.torch_dtype = self.model_kwargs.get("torch_dtype", torch.float32)
 
-        # Sparse backend is available whenever sparse_attention_config is not None.
-        # Note: empty masker_configs still use the custom backend (e.g., softcap) without masking.
-        self._sparse_attention_available: bool = self.sparse_attention is not None
+        # Handle dense-only mode when sparse_attention_config is None
+        self._sparse_attention_available: bool = sparse_attention_config is not None
         # Control token-by-token question processing (for hybrid models)
         self.hybrid = hybrid if hybrid is not None else False
         # Convert device string to GPU ID for ModelServer
@@ -114,13 +114,6 @@ class ModelAdapterHF(ModelAdapter):
         """
         max_context_length: int = request_kwargs.get("max_context_length", INT_MAX)
         max_new_tokens: int = generation_kwargs.get("max_new_tokens", INT_MAX)
-        print(
-            " Processing request with max_context_length: ",
-            max_context_length,
-            " and max_new_tokens: ",
-            max_new_tokens,
-            flush=True,
-        )
 
         questions: List[str] = (
             request.questions
@@ -144,7 +137,6 @@ class ModelAdapterHF(ModelAdapter):
         )
         if input_device is not None:
             context_tokens = context_tokens.to(input_device)
-        print(f"Context tokens: {context_tokens.shape}")
         responses: List[str] = []
 
         self.model.eval()
@@ -229,35 +221,6 @@ class ModelAdapterHF(ModelAdapter):
             custom_attention_fn: Callable with correct signature for HuggingFace
         """
 
-        def infer_layer_type(module: torch.nn.Module, layer_idx: Optional[int]) -> str:
-            """Infer layer type for metric attribution.
-
-            Prefers explicit per-layer settings if available and falls back to
-            full_attention when metadata is unavailable.
-            """
-            explicit_layer_type: Any = getattr(module, "layer_type", None)
-            if isinstance(explicit_layer_type, str):
-                return explicit_layer_type
-
-            model_config: Any = getattr(module, "config", None)
-            if model_config is None:
-                model_config = getattr(self.model, "config", None)
-
-            if model_config is not None and layer_idx is not None:
-                layer_types: Any = getattr(model_config, "layer_types", None)
-                if (
-                    isinstance(layer_types, (list, tuple))
-                    and 0 <= layer_idx < len(layer_types)
-                    and isinstance(layer_types[layer_idx], str)
-                ):
-                    return layer_types[layer_idx]
-
-            is_sliding: Any = getattr(module, "is_sliding", None)
-            if isinstance(is_sliding, bool):
-                return "sliding_attention" if is_sliding else "full_attention"
-
-            return "full_attention"
-
         def custom_attention_callable(
             module: torch.nn.Module,
             queries: torch.Tensor,
@@ -275,7 +238,7 @@ class ModelAdapterHF(ModelAdapter):
                 if layer_idx is not None:
                     kwargs["layer_idx"] = layer_idx
 
-            kwargs["layer_type"] = infer_layer_type(module, layer_idx)
+            kwargs["layer_type"] = infer_layer_type(module, layer_idx, self.model)
 
             if "sparse_meta_data" in kwargs:
                 sparse_meta_data: Dict[Any, Any] = kwargs["sparse_meta_data"]
@@ -324,7 +287,6 @@ class ModelAdapterHF(ModelAdapter):
             The name of the registered attention function
         """
         if self._registered_attention_name is None:
-            print("REGISTERING CUSTOM ATTENTION")
             if not self._sparse_attention_available or self.sparse_attention is None:
                 raise RuntimeError(
                     "Cannot register attention function: sparse attention is not available"
@@ -380,7 +342,6 @@ class ModelAdapterHF(ModelAdapter):
             raise RuntimeError(
                 "Cannot enable sparse mode: sparse attention is not available"
             )
-        print("ENTERING SPARSE MODE")
         # Store original implementations to restore later
         original_implementations: Dict[str, str] = {}
 

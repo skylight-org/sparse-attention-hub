@@ -98,12 +98,9 @@ class ModelAdapter(SparseAttentionAdapterInterface, ModelHubAdapterInterface, AB
         self.sparse_attention = None
         self.kwargs = kwargs
 
-        # Only disable sparse backend if config is None
-        use_sparse_backend = sparse_attention_config is not None
-
         self.sparse_attention = (
             SparseAttention.create_from_config(self.sparse_attention_config)
-            if use_sparse_backend
+            if self.sparse_attention_config is not None
             else None
         )
 

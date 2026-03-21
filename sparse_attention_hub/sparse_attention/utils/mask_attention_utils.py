@@ -183,9 +183,7 @@ def create_sampling_mask_with_per_head_budget(
 
     return sampling_mask
 
-def apply_softcap(scores: torch.Tensor, softcap: Optional[float]):
-    if softcap is None:
-        return scores
+def apply_softcap(scores: torch.Tensor, softcap: float):
     return softcap * torch.tanh(scores / softcap)
 
 def _compute_masked_exp_attention_weights(
@@ -223,7 +221,8 @@ def _compute_masked_exp_attention_weights(
     raw_attention_weights: torch.Tensor = torch.matmul(q, k.transpose(2, 3)) * scaling
 
     # Gemma softcap
-    raw_attention_weights = apply_softcap(raw_attention_weights, softcap)
+    if softcap is not None:
+        raw_attention_weights = apply_softcap(raw_attention_weights, softcap)
     
     if attention_mask is not None:
         raw_attention_weights = raw_attention_weights + attention_mask[

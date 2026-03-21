@@ -123,12 +123,6 @@ class MockBenchmark(Benchmark):
         # Convert to DataFrame
         df: pd.DataFrame = pd.DataFrame(sample_data)
 
-        # Ensure compatibility with base Benchmark request processing contract.
-        if "answer_prefix" not in df.columns:
-            df["answer_prefix"] = ""
-        if "max_new_tokens" not in df.columns:
-            df["max_new_tokens"] = 64
-        
         # Add sample IDs for tracking
         df["sample_id"] = range(1, len(df) + 1)
         

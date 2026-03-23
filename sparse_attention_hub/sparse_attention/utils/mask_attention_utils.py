@@ -247,7 +247,7 @@ def _compute_masked_exp_attention_weights(
     return exp_attention_weights
 
 
-def _get_attention_denominator(exp_attention_weights: torch.Tensor, softcap: Optional[float] = None) -> torch.Tensor:
+def _get_attention_denominator(exp_attention_weights: torch.Tensor) -> torch.Tensor:
     """Get attention denominator from pre-computed exponential attention weights.
 
     Args:
@@ -262,7 +262,6 @@ def _get_attention_denominator(exp_attention_weights: torch.Tensor, softcap: Opt
 def _get_attention_numerator(
     exp_attention_weights: torch.Tensor,
     value_states: torch.Tensor,
-    softcap: Optional[float] = None
 ) -> torch.Tensor:
     """Get attention numerator from pre-computed exponential attention weights and prepared values.
 

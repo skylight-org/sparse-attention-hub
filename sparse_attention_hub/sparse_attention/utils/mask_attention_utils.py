@@ -471,10 +471,10 @@ def get_masked_attention_output(
 
     # Use internal helpers with pre-computed weights
     num: torch.Tensor = _get_attention_numerator(
-        exp_attention_weights, value_states, softcap=softcap
+        exp_attention_weights, value_states
     )
     den: torch.Tensor = _get_attention_denominator(
-        exp_attention_weights, softcap=softcap
+        exp_attention_weights
     )
 
     num, den, exp_attention_weights = apply_sink_bias(

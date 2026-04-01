@@ -210,7 +210,7 @@ class LocalMasker(FixedMasker):
                 tensor_dims, previous_mask.dtype, previous_mask.device
             )
         return self.get_updated_mask(
-            tensor_dims, effective_window_size, keys, previous_mask
+            tensor_dims, effective_window_size, keys, previous_mask,**kwargs
         )
 
     def _calculate_effective_window_size(self, seq_len_keys: int) -> int:
@@ -314,7 +314,8 @@ class SinkMaskerConfig(FixedMaskerConfig):
 
     sink_size: Union[float, int]
     search_space: Dict[str, Any] = field(default_factory=dict)
-
+    is_gpt_oss: bool = False
+    
     def __post_init__(self) -> None:
         """Validate post-initialization constraints for SinkMaskerConfig.
 
@@ -335,6 +336,7 @@ class SinkMasker(FixedMasker):
         """Initialize sink masker with configuration."""
         super().__init__(config)
         self.sink_size = config.sink_size
+        self.is_gpt_oss = False
 
     def get_updated_mask_sparse(
         self,
@@ -342,6 +344,7 @@ class SinkMasker(FixedMasker):
         effective_sink_size: int,
         keys: torch.Tensor,
         previous_mask: Mask,
+        **kwargs,
     ) -> Mask:
         """
         original implementation.
@@ -349,8 +352,35 @@ class SinkMasker(FixedMasker):
         sink_mask: Mask = self._create_sink_mask(
             tensor_dims, effective_sink_size, keys.device, previous_mask.dtype
         )
-        return previous_mask.merge_mask(sink_mask, inplace=False)
+        # NOTE:
+        # HuggingFace GPT-OSS handles sink tokens at attention level (not mask level).
+        # This is a simplified approximation using masks.
+        # Check if GPT-OSS mode is enabled
+        if self.config.is_gpt_oss:
+            mask = previous_mask.get_dense_mask().clone()
 
+            seq_len_q = tensor_dims.seq_len_queries
+            seq_len_k = tensor_dims.seq_len_keys
+
+            causal_mask = torch.tril(
+                torch.ones((seq_len_q, seq_len_k), device=mask.device)
+            )
+
+            mask = mask * causal_mask
+
+            mask[..., :, :effective_sink_size] = torch.maximum(
+                mask[..., :, :effective_sink_size],
+                causal_mask[..., :effective_sink_size]
+            )
+
+            return Mask.create_mask_from_dense_mask(
+                mask.shape,
+                mask,
+                previous_mask.dtype
+            )
+
+        return previous_mask.merge_mask(sink_mask, inplace=False)        
+                
     def get_updated_mask_dense(
         self,
         tensor_dims: AttentionTensorDimensions,
@@ -369,10 +399,11 @@ class SinkMasker(FixedMasker):
         keys: torch.Tensor,
         previous_mask: Mask,
         mode: Literal["sparse", "dense"] = "dense",
+        **kwargs,
     ) -> Mask:
         if mode == "sparse":
             return self.get_updated_mask_sparse(
-                tensor_dims, effective_sink_size, keys, previous_mask
+                tensor_dims, effective_sink_size, keys, previous_mask,**kwargs
             )
         elif mode == "dense":
             return self.get_updated_mask_dense(
@@ -410,11 +441,26 @@ class SinkMasker(FixedMasker):
 
         # If sequence is small enough, use full attention
         if self._should_use_full_attention(tensor_dims, effective_sink_size):
-            return self._create_full_mask(
-                tensor_dims, previous_mask.dtype, previous_mask.device
+            shape = (
+                tensor_dims.batch_size,
+                tensor_dims.num_heads,
+                tensor_dims.seq_len_queries,
+                tensor_dims.seq_len_keys,
+            )
+
+            dense_mask = torch.ones(
+                shape,
+                device=previous_mask.device,
+                dtype=previous_mask.dtype
+            )
+
+            return Mask.create_mask_from_dense_mask(
+                shape,
+                dense_mask,
+                previous_mask.dtype
             )
         return self.get_updated_mask(
-            tensor_dims, effective_sink_size, keys, previous_mask
+            tensor_dims, effective_sink_size, keys, previous_mask,mode="sparse",**kwargs
         )
 
     def _calculate_effective_sink_size(self, seq_len_keys: int) -> int:

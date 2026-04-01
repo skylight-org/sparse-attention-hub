@@ -133,7 +133,7 @@ def get_custom_attention_function(sparse_attention: SparseAttention) -> Callable
 @pytest.fixture
 def test_config() -> LlamaConfig:
     """Create a test Llama configuration matching Llama-3.1-8B-Instruct dimensions."""
-    return LlamaConfig(
+    config = LlamaConfig(
         vocab_size=128256,
         hidden_size=4096,
         intermediate_size=14336,
@@ -145,6 +145,10 @@ def test_config() -> LlamaConfig:
         attention_dropout=0.0,
         attention_bias=False,
     )
+    # Backwards/forwards compatibility across Transformers versions.
+    if not hasattr(config, "rope_theta"):
+        setattr(config, "rope_theta", 500000.0)
+    return config
 
 
 @pytest.fixture(params=TEST_CONFIGS)

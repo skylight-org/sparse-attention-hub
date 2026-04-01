@@ -32,7 +32,7 @@ class ModelAdapterHF(ModelAdapter):
         tokenizer_kwargs: Optional[Dict[str, Any]] = None,
         device: Optional[str] = None,
         hybrid: Optional[bool] = None,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> None:
         """Initialize HuggingFace adapter.
 
@@ -46,10 +46,18 @@ class ModelAdapterHF(ModelAdapter):
         super().__init__(model_name, sparse_attention_config, **kwargs)
         self._registered_attention_name: Optional[str] = None
         self._custom_attention_fn: Optional[Callable] = None
-        self.model_kwargs = model_kwargs or {}
-        self.tokenizer_kwargs = tokenizer_kwargs or {}
-        self.model_registry_path = kwargs.get("model_registry_path", "")
-        self.allow_unregistered_models = kwargs.get("allow_unregistered_models", True)
+        self.model_kwargs: Dict[str, Any] = model_kwargs or {}
+        self.tokenizer_kwargs: Dict[str, Any] = tokenizer_kwargs or {}
+
+        raw_registry_path: Any = kwargs.get("model_registry_path", "")
+        self.model_registry_path: str = (
+            raw_registry_path if isinstance(raw_registry_path, str) else ""
+        )
+
+        raw_allow_unregistered: Any = kwargs.get("allow_unregistered_models", True)
+        self.allow_unregistered_models: bool = (
+            raw_allow_unregistered if isinstance(raw_allow_unregistered, bool) else True
+        )
 
         # more useful parameters to store
         self.device = (

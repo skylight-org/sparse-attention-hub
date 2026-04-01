@@ -61,7 +61,7 @@ def load_model_registry(path: str) -> Dict[str, RegistryEntry]:
         raise ModelRegistryError(f"Model registry path does not exist: {path}")
 
     try:
-        import yaml  # type: ignore
+        import yaml
     except Exception as e:
         raise ModelRegistryError(
             "PyYAML is required to load a model registry; install with `pip install pyyaml`"

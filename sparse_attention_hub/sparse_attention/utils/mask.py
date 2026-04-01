@@ -57,6 +57,11 @@ class Mask:
         self.from_index = from_index
         self.is_full = is_full
         self.is_empty = is_empty
+        self.device: torch.device = device
+        self.mask: Optional[torch.Tensor] = None
+        self.indices: Optional[torch.Tensor] = None
+        self.ptr: Optional[torch.Tensor] = None
+        self.data: Optional[torch.Tensor] = None
 
         if is_full:
             # Full mask optimization - don't store any actual data
@@ -64,26 +69,15 @@ class Mask:
             if device is None:
                 raise ValueError("device must be specified for full masks")
             self.device = device
-            self.mask = None
-            self.indices = None
-            self.ptr = None
-            self.data = None
         elif is_empty:
             # Empty mask optimization - don't store any actual data
             # Device must be provided for empty masks since we have no tensors to infer from
             if device is None:
                 raise ValueError("device must be specified for empty masks")
             self.device = device
-            self.mask = None
-            self.indices = None
-            self.ptr = None
-            self.data = None
         elif from_dense_mask and mask is not None:
             self.mask = mask.to(dtype)
             self.device = mask.device
-            self.indices = None
-            self.ptr = None
-            self.data = None
             # Check if this is actually a full mask
             if self._detect_full_mask():
                 self.is_full = True
@@ -172,7 +166,7 @@ class Mask:
             return bool(torch.all(self.mask == 0.0).item())
         elif self.from_index and self.indices is not None:
             # For sparse representation, empty means no indices
-            return self.indices.numel() == 0
+            return int(self.indices.numel()) == 0
 
         return False
 

@@ -209,12 +209,28 @@ def calculate_metrics(df: pd.DataFrame) -> Dict[str, Any]:
 
     for _, row in df.iterrows():
         gold_answers = row["answers"]
-        if not isinstance(gold_answers, list):
-            gold_answers = [gold_answers] if gold_answers else []
+        if isinstance(gold_answers, np.ndarray):
+            gold_answers = gold_answers.tolist()
+        elif isinstance(gold_answers, tuple):
+            gold_answers = list(gold_answers)
+        elif not isinstance(gold_answers, list):
+            gold_answers = [] if pd.isna(gold_answers) else [gold_answers]
+
+        # Drop null entries and keep a clean list of answer strings.
+        gold_answers = [ga for ga in gold_answers if pd.notna(ga)]
 
         gold_answers_normalized: List[str] = normalize_answers(
             [str(ga) for ga in gold_answers]
         )
+
+        if not gold_answers_normalized:
+            all_em_scores.append(0.0)
+            all_subspan_em_scores.append(0.0)
+            if is_multi_value:
+                all_coverage_scores.append(0.0)
+            else:
+                all_f1_scores.append(0.0)
+            continue
 
         predicted_output: str = (
             str(row["predicted_answer"]) if pd.notna(row["predicted_answer"]) else ""

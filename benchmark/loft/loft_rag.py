@@ -29,6 +29,9 @@ class LoftRag(Benchmark):
     - Single-value: EM (Exact Match), Subspan EM, F1
     - Multi-value: EM, Coverage, Subspan EM
 
+    Reference:
+        https://github.com/google-deepmind/loft
+
     Example:
         >>> loft_rag = LoftRag(subsets_to_run=["nq_32k", "hotpotqa_128k"])
         >>> results = loft_rag.run_benchmark(adapter, result_dir="/path/to/results")

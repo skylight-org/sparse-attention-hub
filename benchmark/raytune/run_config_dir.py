@@ -229,7 +229,32 @@ def load_optimal_configs(config_dir: Path) -> List[BenchmarkTask]:
         try:
             with open(config_file, "r") as f:
                 data = json.load(f)
-            
+            #print("DEBUG: reading config ->", config_file)
+
+            if "sparse_config" in data:
+                for masker in data["sparse_config"].get("masker_configs", []):
+                    params = masker.get("params", {})
+                    if "sorted_channel_file" in params:
+                        path = params["sorted_channel_file"]
+                        #print("DEBUG: checking file ->", path)
+
+                        if not os.path.exists(path):
+                            raise FileNotFoundError(f"sorted_channel_file not found: {path}")
+                            
+
+            # VALIDATE sorted_channel_file
+            if "sparse_config" in data:
+                for masker in data["sparse_config"].get("masker_configs", []):
+                    params = masker.get("params", {})
+                    if "sorted_channel_file" in params:
+                        path = params["sorted_channel_file"]
+                        print("DEBUG: checking file ->", path)   # optional debug
+
+                        if not os.path.exists(path):
+                            raise FileNotFoundError(
+                                f"[CONFIG ERROR] sorted_channel_file not found: {path}"
+                            )  
+                                      
             task_id = f"{data['model']}_{data['task']}_{data['masker_name']}".replace("/", "_")
             
             task = BenchmarkTask(
@@ -245,8 +270,9 @@ def load_optimal_configs(config_dir: Path) -> List[BenchmarkTask]:
             tasks.append(task)
             
         except Exception as e:
-            logging.warning(f"Failed to load {config_file}: {e}")
-    
+            #logging.warning(f"Failed to load {config_file}: {e}")
+            print("ERROR:", e)
+            raise
     return tasks
 
 
@@ -322,10 +348,24 @@ def main(
     print(f"\n{'='*80}")
     print(f"RAY BENCHMARK RUNNER")
     print(f"{'='*80}")
+
+    # Load configurations
+    config_dir = Path(config_dir)
+    if not config_dir.exists():
+        print(f"Error: Config directory {config_dir} not found")
+        sys.exit(1)
     
+    print(f"\nLoading configurations from {config_dir}...")
+    tasks = load_optimal_configs(config_dir)
+    print(f"Loaded {len(tasks)} configurations")
+    print("DEBUG: tasks loaded")
+
+  
+
     # Initialize Ray
     if not ray.is_initialized():
-        ray.init(ignore_reinit_error=True)
+        #ray.init(ignore_reinit_error=True)
+        pass
     
     # Get GPU info
     num_gpus = int(ray.available_resources().get("GPU", 0))
@@ -344,15 +384,6 @@ def main(
     print(f"Ray cluster: {ray.available_resources()}")
     print(f"Using {num_actors} actors on {num_gpus} GPUs")
     
-    # Load configurations
-    config_dir = Path(configs_dir)
-    if not config_dir.exists():
-        print(f"Error: Config directory {config_dir} not found")
-        sys.exit(1)
-    
-    print(f"\nLoading configurations from {config_dir}...")
-    tasks = load_optimal_configs(config_dir)
-    print(f"Loaded {len(tasks)} configurations")
     
     # Set generation and request parameters
     generation_kwargs = {

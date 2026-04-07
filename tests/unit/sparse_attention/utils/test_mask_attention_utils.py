@@ -15,6 +15,7 @@ import torch
 from sparse_attention_hub.sparse_attention.utils.mask import Mask
 from sparse_attention_hub.sparse_attention.utils.mask_attention_utils import (
     _compute_masked_exp_attention_weights,
+    apply_softcap,
     apply_inv_mask_sum,
     create_sampling_mask_with_per_head_budget,
     get_attention_denominator,
@@ -600,6 +601,15 @@ class TestMaskExpWts:
             expected_exp_weights = torch.exp(expected_raw_weights - expected_max)
 
             assert torch.allclose(result, expected_exp_weights, atol=1e-6)
+
+    def test_softcap_limits_attention_scores(self):
+        """Softcap transformation should asymptotically bound large logits."""
+        scores = torch.tensor([100.0])
+        cap = 50.0
+
+        result = apply_softcap(scores, cap)
+
+        assert result.item() <= cap
 
 
 @pytest.mark.unit

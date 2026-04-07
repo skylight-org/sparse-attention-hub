@@ -37,3 +37,27 @@ def generate_tokenizer_key(
     """
     kwargs_hash = hash_kwargs(tokenizer_kwargs)
     return f"{tokenizer_name}|{kwargs_hash}"
+
+def infer_layer_type(module, layer_idx, model=None):
+    explicit_layer_type = getattr(module, "layer_type", None)
+    if isinstance(explicit_layer_type, str):
+        return explicit_layer_type
+
+    model_config = getattr(module, "config", None)
+    if model_config is None and model is not None:
+        model_config = getattr(model, "config", None)
+
+    if model_config is not None and layer_idx is not None:
+        layer_types = getattr(model_config, "layer_types", None)
+        if (
+            isinstance(layer_types, (list, tuple))
+            and 0 <= layer_idx < len(layer_types)
+            and isinstance(layer_types[layer_idx], str)
+        ):
+            return layer_types[layer_idx]
+
+    is_sliding = getattr(module, "is_sliding", None)
+    if isinstance(is_sliding, bool):
+        return "sliding_attention" if is_sliding else "full_attention"
+
+    return "unknown"

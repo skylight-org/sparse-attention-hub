@@ -26,6 +26,7 @@ class ResearchAttentionConfig(SparseAttentionConfig):
     """Configuration class for research attention mechanisms."""
 
     masker_configs: List[MaskerConfig]
+    softcap: Optional[float] = None  # Optional softcap for attention scores (e.g., Gemma uses 30.0)
 
 
 class ResearchAttention(SparseAttention):
@@ -86,6 +87,8 @@ class ResearchAttention(SparseAttention):
         Returns:
             Tuple of attention output and optional attention weights.
         """
+        softcap = kwargs.pop("softcap", self.sparse_attention_config.softcap)
+
         # Extract sparse_meta_data from kwargs
         if "sparse_meta_data" not in kwargs:
             raise ValueError(
@@ -118,12 +121,19 @@ class ResearchAttention(SparseAttention):
                 **kwargs,
             )
 
+        layer_type: str = str(kwargs.get("layer_type", "unknown"))
+        assert layer_type in ["full_attention", "sliding_attention", "unknown"]
         if MicroMetricLogger().is_metric_enabled("research_attention_density"):
-            MicroMetricLogger().log(
-                "research_attention_density",
-                sparse_attention_mask.get_density(),
-                metadata={"layer_idx": kwargs["layer_idx"]},
-            )
+            # Density is only meaningful for dense/full-attention layers.
+            if layer_type == "full_attention":
+                MicroMetricLogger().log(
+                    "research_attention_density",
+                    sparse_attention_mask.get_density(),
+                    metadata={
+                        "layer_idx": kwargs.get("layer_idx"),
+                        "layer_type": layer_type,
+                    },
+                )
 
         s_aux_raw: Any = kwargs.pop("s_aux", None)
         s_aux: Optional[torch.Tensor] = (
@@ -143,6 +153,7 @@ class ResearchAttention(SparseAttention):
             scaling=scaling,
             dropout=dropout,
             sparse_attention_mask=sparse_attention_mask,
+            softcap=softcap,
             return_attention_weights=True,
             **kwargs,
         )
@@ -164,7 +175,10 @@ class ResearchAttention(SparseAttention):
             MicroMetricLogger().log(
                 "research_attention_output_error",
                 float(error.item()),
-                metadata={"layer_idx": kwargs["layer_idx"]},
+                metadata={
+                    "layer_idx": kwargs["layer_idx"],
+                    "layer_type": layer_type,
+                },
             )
 
         return attention_output, attention_weights

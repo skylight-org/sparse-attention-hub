@@ -15,6 +15,7 @@ from ..sparse_attention.research_attention.base import ResearchAttention
 from .base import ModelAdapter, Request, RequestResponse
 from .model_servers.huggingface import ModelServerHF
 from .utils.config import ModelServerConfig
+from sparse_attention_hub.adapters.utils.model_utils import infer_layer_type
 
 INT_MAX = 2**31 - 1
 
@@ -122,13 +123,12 @@ class ModelAdapterHF(ModelAdapter):
         max_context_length: int = request_kwargs.get("max_context_length", INT_MAX)
         max_new_tokens: int = generation_kwargs.get("max_new_tokens", INT_MAX)
         print(
-            " Processing request with max_context_length: ",
+            "Processing request with max_context_length: ",
             max_context_length,
             " and max_new_tokens: ",
             max_new_tokens,
             flush=True,
-        )
-
+        )        
         questions: List[str] = (
             request.questions
             if isinstance(request.questions, list)
@@ -247,10 +247,13 @@ class ModelAdapterHF(ModelAdapter):
             **kwargs: Dict[str, Any],
         ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
             """Custom attention callable for HuggingFace integration."""
+            layer_idx: Optional[int] = kwargs.get("layer_idx")
             if hasattr(module, "layer_idx"):
                 layer_idx = getattr(module, "layer_idx", None)
                 if layer_idx is not None:
                     kwargs["layer_idx"] = layer_idx
+
+            kwargs["layer_type"] = infer_layer_type(module, layer_idx, self.model)
 
             if "sparse_meta_data" in kwargs:
                 sparse_meta_data: Dict[Any, Any] = kwargs["sparse_meta_data"]
@@ -354,7 +357,6 @@ class ModelAdapterHF(ModelAdapter):
             raise RuntimeError(
                 "Cannot enable sparse mode: sparse attention is not available"
             )
-
         # Store original implementations to restore later
         original_implementations: Dict[str, str] = {}
 

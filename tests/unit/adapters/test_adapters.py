@@ -330,6 +330,29 @@ class TestModelAdapterHF:
         "sparse_attention_hub.adapters.model_servers.huggingface.AutoModelForCausalLM"
     )
     @patch("sparse_attention_hub.adapters.model_servers.huggingface.AutoTokenizer")
+    def test_empty_masker_config_still_uses_backend(
+        self, mock_tokenizer, mock_model
+    ) -> None:
+        """Empty masker configs should still initialize sparse backend (for softcap, etc)."""
+        mock_tokenizer_instance = Mock()
+        mock_tokenizer.from_pretrained.return_value = mock_tokenizer_instance
+
+        mock_model_instance = Mock()
+        mock_model.from_pretrained.return_value = mock_model_instance
+
+        adapter = ModelAdapterHF(
+            sparse_attention_config=ResearchAttentionConfig(masker_configs=[]),
+            model_name="test-model",
+        )
+
+        # Sparse backend should be created even with empty masker_configs
+        assert adapter.sparse_attention is not None
+        assert adapter._sparse_attention_available is True
+
+    @patch(
+        "sparse_attention_hub.adapters.model_servers.huggingface.AutoModelForCausalLM"
+    )
+    @patch("sparse_attention_hub.adapters.model_servers.huggingface.AutoTokenizer")
     def test_enable_sparse_mode_when_not_available(
         self, mock_tokenizer, mock_model
     ) -> None:

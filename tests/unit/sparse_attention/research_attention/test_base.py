@@ -7,6 +7,8 @@
 """
 
 import pytest
+import torch
+from unittest.mock import patch
 
 
 @pytest.mark.unit
@@ -189,3 +191,157 @@ class TestSamplingMaskerValidation:
         attention = ResearchAttention(config, [local_masker, sink_masker])
         assert attention is not None
         assert len(attention.maskers) == 2
+
+
+@pytest.mark.unit
+class TestSoftcapPlumbing:
+    """Test class for softcap propagation through research attention."""
+
+    def test_softcap_forwarded_to_masked_attention_with_empty_maskers(self):
+        """Empty maskers should still pass configured softcap to masked attention compute path."""
+        from sparse_attention_hub.sparse_attention.research_attention import (
+            ResearchAttention,
+            ResearchAttentionConfig,
+        )
+
+        config = ResearchAttentionConfig(masker_configs=[], softcap=30.0)
+        attention = ResearchAttention.create_from_config(config)
+
+        queries = torch.randn(1, 1, 2, 4)
+        keys = torch.randn(1, 1, 2, 4)
+        values = torch.randn(1, 1, 2, 4)
+
+        with patch(
+            "sparse_attention_hub.sparse_attention.research_attention.base.get_masked_attention_output"
+        ) as mock_get_masked_attention_output:
+            mock_get_masked_attention_output.return_value = (
+                torch.zeros_like(queries),
+                torch.zeros(1, 1, 2, 2),
+            )
+
+            module = torch.nn.Module()
+            module.training = False
+
+            attention.custom_attention(
+                module=module,
+                queries=queries,
+                keys=keys,
+                values=values,
+                attention_mask=None,
+                scaling=1.0,
+                dropout=0.0,
+                sparse_meta_data={},
+                layer_idx=0,
+            )
+
+            assert mock_get_masked_attention_output.call_count == 1
+            assert mock_get_masked_attention_output.call_args.kwargs["softcap"] == 30.0
+
+
+@pytest.mark.unit
+class TestDensityLayerFiltering:
+    """Test density metric filtering by attention layer type."""
+
+    def test_density_logged_for_full_attention_layer(self):
+        """Density should be logged when layer type is full_attention."""
+        from sparse_attention_hub.sparse_attention.research_attention import (
+            ResearchAttention,
+            ResearchAttentionConfig,
+        )
+
+        attention = ResearchAttention.create_from_config(
+            ResearchAttentionConfig(masker_configs=[])
+        )
+
+        queries = torch.randn(1, 1, 2, 4)
+        keys = torch.randn(1, 1, 2, 4)
+        values = torch.randn(1, 1, 2, 4)
+
+        with patch(
+            "sparse_attention_hub.sparse_attention.research_attention.base.get_masked_attention_output"
+        ) as mock_get_masked_attention_output, patch(
+            "sparse_attention_hub.sparse_attention.research_attention.base.MicroMetricLogger.is_metric_enabled"
+        ) as mock_is_metric_enabled, patch(
+            "sparse_attention_hub.sparse_attention.research_attention.base.MicroMetricLogger.log"
+        ) as mock_log:
+            mock_get_masked_attention_output.return_value = (
+                torch.zeros_like(queries),
+                torch.zeros(1, 1, 2, 2),
+            )
+            mock_is_metric_enabled.side_effect = (
+                lambda metric_name: metric_name == "research_attention_density"
+            )
+
+            module = torch.nn.Module()
+            module.training = False
+
+            attention.custom_attention(
+                module=module,
+                queries=queries,
+                keys=keys,
+                values=values,
+                attention_mask=None,
+                scaling=1.0,
+                dropout=0.0,
+                sparse_meta_data={},
+                layer_idx=0,
+                layer_type="full_attention",
+            )
+
+            assert any(
+                call.args[0] == "research_attention_density"
+                for call in mock_log.call_args_list
+            )
+
+    def test_density_not_logged_for_sliding_attention_layer(self):
+        """Density should not be logged when layer type is not full_attention."""
+        from sparse_attention_hub.sparse_attention.research_attention import (
+            ResearchAttention,
+            ResearchAttentionConfig,
+        )
+
+        attention = ResearchAttention.create_from_config(
+            ResearchAttentionConfig(masker_configs=[])
+        )
+
+        queries = torch.randn(1, 1, 2, 4)
+        keys = torch.randn(1, 1, 2, 4)
+        values = torch.randn(1, 1, 2, 4)
+
+        with patch(
+            "sparse_attention_hub.sparse_attention.research_attention.base.get_masked_attention_output"
+        ) as mock_get_masked_attention_output, patch(
+            "sparse_attention_hub.sparse_attention.research_attention.base.MicroMetricLogger.is_metric_enabled"
+        ) as mock_is_metric_enabled, patch(
+            "sparse_attention_hub.sparse_attention.research_attention.base.MicroMetricLogger.log"
+        ) as mock_log:
+            mock_get_masked_attention_output.return_value = (
+                torch.zeros_like(queries),
+                torch.zeros(1, 1, 2, 2),
+            )
+            mock_is_metric_enabled.side_effect = (
+                lambda metric_name: metric_name == "research_attention_density"
+            )
+
+            module = torch.nn.Module()
+            module.training = False
+
+            attention.custom_attention(
+                module=module,
+                queries=queries,
+                keys=keys,
+                values=values,
+                attention_mask=None,
+                scaling=1.0,
+                dropout=0.0,
+                sparse_meta_data={},
+                layer_idx=0,
+                layer_type="sliding_attention",
+            )
+
+            density_calls = [
+                call
+                for call in mock_log.call_args_list
+                if call.args[0] == "research_attention_density"
+            ]
+            assert len(density_calls) == 0

@@ -55,6 +55,8 @@ dependencies = [
     "fire>=0.6.0",
     "accelerate>=0.20.0",
     "pydantic",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.31.0",
 ]
 
 [project.optional-dependencies]
@@ -92,6 +94,13 @@ benchmarks = [
     "tqdm>=4.64.0",
     "pandas>=1.5.0",
 ]
+# FlashAttention-2 (CUDA build). Example with conda env ``swebench311``:
+#   conda activate swebench311 && cd <repo> && uv pip install torch && uv pip install -e ".[flash_attn]"
+# ``torch`` must be in the env; ``[tool.uv.extra-build-dependencies]`` injects it for flash-attn's
+# setup. Requires nvcc/CUDA compatible with your PyTorch build.
+flash_attn = [
+    "flash-attn>=2.6.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/xAlg-ai/sparse-attention-hub"
@@ -101,6 +110,10 @@ Documentation = "https://sparse-attention-hub.readthedocs.io"
 
 [project.scripts]
 sparse-attention-benchmark = "sparse_attention_hub.benchmark.executor:main"
+
+# ``flash-attn`` imports ``torch`` in setup.py; uv's isolated build env omits it unless listed here.
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch"]
 
 [tool.setuptools.packages.find]
 where = ["."]

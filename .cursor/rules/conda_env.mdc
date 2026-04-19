@@ -1,8 +1,19 @@
 ---
-description: sparse_attention_hub conda
+description: conda envs for this repo
 alwaysApply: true
 ---
-Every project is associated with a conda environment. before starting to run any commands, run the following
+
+Use **conda ``swebench311``** when running **distributed SWE-bench** and **HF model servers** (``distributed_swebench_inference.py``, ``start_server.py``) so PyTorch matches the host NVIDIA driver. After activating, point child servers at that interpreter:
+
+```bash
+conda activate swebench311
+export SPARSE_ATTENTION_SERVER_PYTHON=$(which python)
 ```
+
+If you launch the driver script with ``uv run`` or another venv, keep ``SPARSE_ATTENTION_SERVER_PYTHON`` set so ``start_server`` subprocesses still use ``swebench311``.
+
+For other repo work, you may use **``sparse_attention_hub``** when that is the project default:
+
+```bash
 conda activate sparse_attention_hub
 ```

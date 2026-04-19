@@ -4,7 +4,7 @@ import random
 import re
 import string
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
 import torch
 from tqdm import tqdm
@@ -15,6 +15,7 @@ from ..sparse_attention.base import SparseAttention, SparseAttentionConfig
 from ..sparse_attention.research_attention.base import ResearchAttention
 from .base import ModelAdapter, Request, RequestResponse
 from .model_servers.huggingface import ModelServerHF
+from .utils.config import ModelServerConfig
 
 INT_MAX = 2**31 - 1
 
@@ -31,6 +32,7 @@ class ModelAdapterHF(ModelAdapter):
         model_kwargs: Optional[Dict[str, Any]] = None,
         tokenizer_kwargs: Optional[Dict[str, Any]] = None,
         device: Optional[str] = None,
+        hybrid: Optional[bool] = None,
         **kwargs: Dict[str, Any],
     ) -> None:
         """Initialize HuggingFace adapter.
@@ -41,12 +43,17 @@ class ModelAdapterHF(ModelAdapter):
             model_kwargs: Additional keyword arguments for model creation
             device: Device to run the model on TODO: support dynamic and multipledevice placement
             tokenizer_kwargs: Additional keyword arguments for tokenizer creation
+            hybrid: If True, consume question tokens one token at a time after context prefill
+                (for hybrid linear-attention models such as Qwen3.5). If False, use a single
+                batched forward over all question tokens.
         """
         super().__init__(model_name, sparse_attention_config, **kwargs)
         self._registered_attention_name: Optional[str] = None
         self._custom_attention_fn: Optional[Callable] = None
         self.model_kwargs = model_kwargs or {}
         self.tokenizer_kwargs = tokenizer_kwargs or {}
+        self.model_registry_path = kwargs.get("model_registry_path", "")
+        self.allow_unregistered_models = kwargs.get("allow_unregistered_models", True)
 
         # more useful parameters to store
         self.device = (
@@ -56,8 +63,8 @@ class ModelAdapterHF(ModelAdapter):
 
         # Handle dense-only mode when sparse_attention_config is None
         self._sparse_attention_available: bool = sparse_attention_config is not None
-        # create model and tokenizer
-
+        # Control token-by-token question processing (for hybrid models)
+        self.hybrid = hybrid if hybrid is not None else False
         # Convert device string to GPU ID for ModelServer
         gpu_id: Optional[int] = None
         if self.device.startswith("cuda"):
@@ -70,7 +77,12 @@ class ModelAdapterHF(ModelAdapter):
                 except (IndexError, ValueError):
                     gpu_id = None
 
-        model_server = ModelServerHF()
+        model_server = ModelServerHF(
+            ModelServerConfig(
+                model_registry_path=self.model_registry_path,
+                allow_unregistered_models=self.allow_unregistered_models,
+            )
+        )
         self.model = model_server.get_model(self.model_name, gpu_id, self.model_kwargs)
         self.tokenizer = model_server.get_tokenizer(
             self.model_name, self.tokenizer_kwargs
@@ -129,9 +141,9 @@ class ModelAdapterHF(ModelAdapter):
         context_tokens = context_tokens[
             :, :max_context_length
         ]  # truncate context to max_context_length
-        # if self.device is not None:
-        #     context_tokens = context_tokens.to(self.device)
-        input_device = self.model.device if hasattr(self.model, 'device') else self.device
+        input_device: Union[str, torch.device, None] = (
+            self.model.device if hasattr(self.model, "device") else self.device
+        )
         if input_device is not None:
             context_tokens = context_tokens.to(input_device)
         print(f"Context tokens: {context_tokens.shape}")
@@ -373,72 +385,77 @@ class ModelAdapterHF(ModelAdapter):
         context_outputs: Any,
         sparse_meta_data: Dict[str, Any],
         generation_kwargs: Dict[str, Any],
-        **kwargs: Dict[str, Any],
+        **_kwargs: Dict[str, Any],
     ) -> str:
-        """Generate text response.
+        """Generate text response from cached context.
 
-        Important for Qwen3.5 hybrid models:
-        after context prefill, feed the question tokens one-by-one so the
-        linear-attention cached path uses seq_len == 1.
+        For hybrid models, after context prefill, question tokens are fed one at a time so
+        the linear-attention path sees ``seq_len == 1``. Non-hybrid models use one batched
+        forward over all question tokens. The OpenAI ``/v1/chat/completions`` path in
+        ``start_server.py`` uses HuggingFace ``generate()`` instead of this method.
+
+        Args:
+            question_tokens: Token ids for the question segment.
+            context_outputs: Outputs after context prefill (initial ``past_key_values``).
+            sparse_meta_data: Metadata for custom sparse attention.
+            generation_kwargs: Generation parameters (e.g. ``max_new_tokens``).
+
+        Returns:
+            Decoded answer string.
         """
         if self.tokenizer is None:
             raise ValueError("Tokenizer not initialized")
 
-        max_new_tokens: int = generation_kwargs.get("max_new_tokens", 50)
+        max_new_tokens: int = int(generation_kwargs.get("max_new_tokens", 50))
 
         should_stop_token_ids = self.model.generation_config.eos_token_id
         if not isinstance(should_stop_token_ids, list):
             should_stop_token_ids = [should_stop_token_ids]
 
-        # Start from cached context state
         past_key_values = context_outputs.past_key_values
+        last_outputs: Optional[Any] = None
 
-        # ------------------------------------------------------------------
-        # Step 1: consume the question/prefix ONE TOKEN AT A TIME
-        # ------------------------------------------------------------------
-        last_outputs = None
-
-        for idx in range(question_tokens.shape[1]):
-            step_input = question_tokens[:, idx:idx + 1]
-
+        if self.hybrid:
+            for _ in range(question_tokens.shape[1]):
+                step_input: torch.Tensor = question_tokens[:, idx : idx + 1]
+                model_kwargs: Dict[str, Any] = {
+                    "input_ids": step_input,
+                    "past_key_values": past_key_values,
+                    "use_cache": True,
+                    "logits_to_keep": 1,
+                }
+                if self._sparse_attention_available:
+                    model_kwargs["sparse_meta_data"] = sparse_meta_data
+                with torch.no_grad():
+                    last_outputs = self.model(**model_kwargs)
+                past_key_values = last_outputs.past_key_values
+        else:
             model_kwargs = {
-                "input_ids": step_input,
+                "input_ids": question_tokens,
                 "past_key_values": past_key_values,
                 "use_cache": True,
-                "logits_to_keep": 1,
             }
-
-            # Only pass sparse_meta_data when sparse mode is actually enabled
             if self._sparse_attention_available:
                 model_kwargs["sparse_meta_data"] = sparse_meta_data
-
             with torch.no_grad():
                 last_outputs = self.model(**model_kwargs)
-
             past_key_values = last_outputs.past_key_values
 
         if last_outputs is None:
             raise ValueError("Question tokens are empty; cannot generate response")
 
-        # ------------------------------------------------------------------
-        # Step 2: first generated token comes from the final question step
-        # ------------------------------------------------------------------
-        generated_ids = [last_outputs.logits[0, -1].argmax()]
+        generated_ids: List[torch.Tensor] = [last_outputs.logits[0, -1].argmax()]
 
         if generated_ids[-1].item() in should_stop_token_ids:
-            answer = self.tokenizer.decode(
+            answer_early: str = self.tokenizer.decode(
                 torch.stack(generated_ids), skip_special_tokens=True
             )
-            cleaned_answer = self._postprocess_answer(answer, generation_kwargs)
             print(
-                f"[Model {self.model_name}] Decoded response: {cleaned_answer}",
+                f"[Model {self.model_name}] Decoded response (early EOS): {answer_early}",
                 flush=True,
             )
-            return cleaned_answer
+            return answer_early
 
-        # ------------------------------------------------------------------
-        # Step 3: continue normal autoregressive generation, one token at a time
-        # ------------------------------------------------------------------
         for _ in tqdm(range(max_new_tokens - 1), disable=(max_new_tokens < 1000)):
             model_kwargs = {
                 "input_ids": generated_ids[-1].unsqueeze(0).unsqueeze(0),
@@ -453,7 +470,7 @@ class ModelAdapterHF(ModelAdapter):
                 outputs = self.model(**model_kwargs)
 
             past_key_values = outputs.past_key_values
-            new_id = outputs.logits[0, -1].argmax()
+            new_id: torch.Tensor = outputs.logits[0, -1].argmax()
             generated_ids.append(new_id)
 
             if new_id.item() in should_stop_token_ids:
@@ -462,5 +479,8 @@ class ModelAdapterHF(ModelAdapter):
         answer: str = self.tokenizer.decode(
             torch.stack(generated_ids), skip_special_tokens=True
         )
-
+        print(
+            f"[Model {self.model_name}] Decoded response: {answer}",
+            flush=True,
+        )
         return answer

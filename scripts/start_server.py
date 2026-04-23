@@ -194,7 +194,7 @@ def _dense_prefill_attention_bhld(
 # ==============================================================================
 
 # ``None``: fully dense HuggingFace attention. Default: sink + local window + OracleTopK
-# at 20% heavy mass for research sparse decode (see masker configs below).
+# at 20% heavy mass for research sparse decode.
 SPARSE_CONFIG: Optional[ResearchAttentionConfig] = ResearchAttentionConfig(
     masker_configs=[
         SinkMaskerConfig(sink_size=128),

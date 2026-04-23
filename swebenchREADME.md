@@ -1,6 +1,9 @@
 # SWE-Bench inference with sparse-attention-hub
 
-This guide walks through cloning dependencies, building Docker images, pointing OpenHands at your local Hugging Face server, and running **distributed SWE-Bench inference**. It ends with a **fully dense** Qwen3.5-27B example (no custom sparse attention).
+This guide walks through cloning dependencies, building Docker images, and running **distributed SWE-Bench inference** with a single launcher script that can start either:
+
+- a Hugging Face adapter server (`--backend hf`), or
+- a vLLM OpenAI-compatible server (`--backend vllm`).
 
 ---
 
@@ -62,14 +65,19 @@ Adjust flags to match your registry and whether you push images.
 
 ---
 
-## 3. Dense vs sparse (`start_server.py`)
+## 3. Backend switching (command-only)
 
-The HF server reads **`SPARSE_CONFIG`** at the top of `scripts/start_server.py`.
+`scripts/distributed_swebench_inference.py` now supports:
 
-- **Dense (standard Hugging Face attention):** set **`SPARSE_CONFIG = None`** (and remove or comment out the `ResearchAttentionConfig(...)` block if you are editing manually).
-- **Sparse (research attention):** keep a `ResearchAttentionConfig` with maskers (sink, local, OracleTopK, etc.).
+- **`--backend hf`**: launch `scripts/start_server.py` replicas (sparse/dense behavior from that server config).
+- **`--backend vllm`**: launch `vllm serve` replicas directly.
 
-For the **Qwen3.5-27B dense** command below, ensure **`SPARSE_CONFIG = None`** before starting servers.
+So switching HF vs vLLM does **not** require editing `distributed_swebench_inference.py`; it is a command flag.
+
+Notes:
+
+- If you use `--backend hf`, sparse vs dense still depends on `SPARSE_CONFIG` in `scripts/start_server.py`.
+- If you use `--backend vllm`, `SPARSE_CONFIG` is irrelevant.
 
 ---
 
@@ -85,7 +93,7 @@ For the **Qwen3.5-27B dense** command below, ensure **`SPARSE_CONFIG = None`** b
   "temperature": 0.6,
   "top_p": 0.95,
   "top_k": 20,
-  "max_output_tokens": 32768,
+  "max_output_tokens": 8192,
   "litellm_extra_body": {
     "repetition_penalty": 1.0,
     "min_p": 0.0,
@@ -125,11 +133,11 @@ Ensure the chosen host and ports (**`base_port`, `base_port+1`, …**) are allow
 
 ---
 
-## 6. Qwen3.5-27B — **dense** distributed SWE-Bench (example)
+## 6. Qwen3.5-27B — distributed SWE-Bench (HF or vLLM)
 
-**Before running:** set **`SPARSE_CONFIG = None`** in `scripts/start_server.py` (§3).
+### 6.1 HF backend (`--backend hf`)
 
-**One shell:**
+If you want dense HF behavior, set `SPARSE_CONFIG = None` in `scripts/start_server.py`.
 
 ```bash
 conda activate "env"
@@ -137,14 +145,35 @@ cd /path/to/sparse-attention-hub
 export SPARSE_ATTENTION_SERVER_PYTHON=$(which python)
 
 python scripts/distributed_swebench_inference.py \
+  --backend hf \
   --instances_file benchmarks/neurips/instances_qwen3.5-27b_32.txt \
   --model_name openai/Qwen/Qwen3.5-27B \
-  --output_dir benchmarks/neurips/run/qwen35-27b-dense-4plus4 \
+  --output_dir benchmarks/neurips/run/qwen35-27b-hf-dense-4plus4 \
   --num_gpus 8 \
   --gpus-per-server 4 \
   --max-memory-per-gpu-gib 72 \
   --base_port 4000 \
   --num-workers 1
+```
+
+### 6.2 vLLM backend (`--backend vllm`)
+
+```bash
+conda activate "env"
+cd /path/to/sparse-attention-hub
+
+python scripts/distributed_swebench_inference.py \
+  --backend vllm \
+  --instances_file benchmarks/neurips/instances_qwen3.5-27b_32.txt \
+  --model_name openai/Qwen/Qwen3.5-27B \
+  --output_dir benchmarks/neurips/run/qwen35-27b-vllm-4plus4 \
+  --num_gpus 8 \
+  --gpus-per-server 4 \
+  --base_port 4000 \
+  --num-workers 1 \
+  --vllm-max-model-len 131072 \
+  --vllm-gpu-memory-utilization 0.92 \
+  --vllm-dtype auto
 ```
 
 ### Flag reference
@@ -153,16 +182,56 @@ python scripts/distributed_swebench_inference.py \
 |------|--------|
 | `--instances_file` | Text file: one SWE-Bench instance id per line (see §7). |
 | `--model_name` | LiteLLM model id passed to OpenHands; must match what the server exposes. Provider prefix `openai/` is stripped for **starting** the HF server; the full string is used in the LLM config for the client. |
+| `--backend` | Server backend: `hf` or `vllm`. |
 | `--output_dir` | Run artifacts: server logs (`server_rank_*.log`), per-GPU harness output, merged reports. |
 | `--num_gpus` | Total physical GPUs used on this machine for this run (after `--gpu_offset`). |
-| `--gpus-per-server` | GPUs per **`start_server.py` process** (`CUDA_VISIBLE_DEVICES` length). Must divide `--num_gpus`. `4` on an 8-GPU box ⇒ **two replicas** on ports `4000` and `4001`. |
-| `--max-memory-per-gpu-gib` | Passed to HF **`max_memory`** when using `--device-map auto` (headroom on 80GB cards, e.g. `72`). |
+| `--gpus-per-server` | GPUs per server process (HF or vLLM). Must divide `--num_gpus`. `4` on an 8-GPU box ⇒ **two replicas** on ports `4000` and `4001`. |
+| `--max-memory-per-gpu-gib` | HF only: passed to `start_server.py` `max_memory` with `device_map=auto` (e.g. `72`). |
 | `--base_port` | First replica port; replica *k* uses `base_port + k`. |
 | `--num-workers` | Parallel SWE-Bench instances per **GPU track** (OpenHands). Use **`1`** for large models to reduce concurrent load on each server. |
+| `--vllm-max-model-len` | vLLM only: server context window cap. |
+| `--vllm-gpu-memory-utilization` | vLLM only: memory fraction per GPU. |
+| `--vllm-dtype` | vLLM only: dtype (e.g., `auto`, `bfloat16`). |
 
-**Omitted flags (defaults):** `--gpu_offset` defaults to `0`. **`--is-hybrid`** is omitted for dense. **`--skip_validation`** is omitted so `uv`/docker checks run.
+**Omitted flags (defaults):** `--gpu_offset` defaults to `0`, `--skip_validation` omitted so `uv`/docker checks run. `--is-hybrid` is HF-only (forwarded to `start_server.py`).
 
 Optional env: **`SWEBENCH_SERVER_READY_TIMEOUT`** (seconds, default `900`) while waiting for each server to load.
+
+### vLLM tuning notes (`--backend vllm`)
+
+Align with the **[Qwen3.5-27B model card](https://huggingface.co/Qwen/Qwen3.5-27B)** (vLLM section):
+
+- **Long context:** The model is trained for **262,144** tokens. A low **`--max-model-len` (e.g. 32k)** forces tiny `max_output_tokens` and frequent `VLLMValidationError`. Use the **largest `--max-model-len` that fits in VRAM** (try **131072** or **262144** on 8×80GB; reduce if you OOM).
+- **Tool calls:** Official recipe uses **`--reasoning-parser qwen3`**, **`--enable-auto-tool-choice`**, and **`--tool-call-parser qwen3_coder`** (not `qwen3_xml`).
+- **SWE-Bench is text-only:** **`--language-model-only`** skips the vision encoder and frees memory for **more KV / longer context** (recommended for this harness).
+- **Direct (non-thinking) replies:** Qwen3.5 “thinks” by default; for coding agents, pass **`chat_template_kwargs: {"enable_thinking": false}`** (already in `benchmarks/neurips/llm_vllm_dense.json` via `litellm_extra_body`).
+- **Sampling:** The card recommends **temperature 0.6, top_p 0.95, top_k 20, presence_penalty 0** for *precise coding* in thinking mode; the same JSON uses that profile for instruct-style runs.
+
+Equivalent standalone server (if you are not using the distributed launcher):
+
+```bash
+conda activate swebench311
+cd /path/to/sparse-attention-hub
+
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 vllm serve Qwen/Qwen3.5-27B \
+  --tensor-parallel-size 8 \
+  --host 0.0.0.0 \
+  --port 4000 \
+  --max-model-len 131072 \
+  --gpu-memory-utilization 0.92 \
+  --dtype auto \
+  --trust-remote-code \
+  --language-model-only \
+  --reasoning-parser qwen3 \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder
+```
+
+**Client:** Keep **`max_output_tokens` + prompt tokens ≤ `--max-model-len`**. With a **large** server cap, raise **`max_output_tokens`** in the LLM JSON toward the card’s **32k** typical / **~81k** heavy recommendation as VRAM allows. For a **32k** server only, keep **`8192`** (or lower) so prompts have headroom.
+
+**Ultra-long (YaRN):** The card documents **`VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`** and **`--hf-overrides`** for **1M+** context; use only if you need beyond native 262k and know the tradeoffs.
+
+**Stopping vLLM:** Use **one** `Ctrl+C` and wait for “Application shutdown complete.” Hitting `Ctrl+C` repeatedly while requests are in flight can produce `cannot schedule new futures after shutdown`, `Worker proc … died unexpectedly`, and `RuntimeError: cancelled` in the logs—these are **teardown races**, not model errors. Stop `swebench-infer` first (or wait for idle), then stop vLLM. If a worker is stuck: `pkill -f 'vllm serve'` after a short grace period, then restart.
 
 ---
 

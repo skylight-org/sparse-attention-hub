@@ -3,7 +3,8 @@
 Distributed SWE-Bench Inference Script
 
 This script distributes SWE-Bench inference across multiple GPUs on a single node.
-It splits instances, starts multiple servers with sparse attention, and runs parallel inference.
+It splits instances, starts multiple model-server replicas (HF or vLLM), and runs
+parallel SWE-Bench inference tracks against those replicas.
 
 Usage:
     python scripts/distributed_swebench_inference.py \
@@ -12,6 +13,14 @@ Usage:
         --output_dir /path/to/output \
         --num_gpus 8 \
         --base_port 4000
+
+    Switch backend with command-only changes:
+
+        # HuggingFace adapter server (sparse/dense controlled by start_server.py)
+        python scripts/distributed_swebench_inference.py ... --backend hf
+
+        # vLLM OpenAI server
+        python scripts/distributed_swebench_inference.py ... --backend vllm
 
     Qwen3.5-27B (hybrid) + sparse OracleTopK 20% on 8 GPUs (4+4 replicas), one SWE worker each::
 
@@ -40,7 +49,9 @@ Usage:
 
     Large models (tight VRAM): pass ``--num-workers 1`` so each GPU process runs
     one instance at a time. Conversation and LiteLLM timeouts default to 5400s
-    (90 minutes) unless overridden in the environment.
+    (90 minutes) unless overridden in the environment. Per-completion OpenHands
+    ``LLM`` HTTP ``timeout`` in the generated JSON defaults to the same value;
+    override with ``SWEBENCH_LLM_HTTP_TIMEOUT`` (seconds).
 
 The LLM host for Docker workspaces is chosen automatically: the default ``bridge``
 network gateway from ``docker network inspect`` (when Docker is available), otherwise
@@ -154,6 +165,21 @@ def resolve_server_python() -> str:
     return sys.executable
 
 
+def resolve_vllm_bin() -> str:
+    """vLLM executable for server launch (defaults to ``vllm``)."""
+    return os.environ.get("SWEBENCH_VLLM_BIN", "vllm").strip() or "vllm"
+
+
+def strip_provider_prefix(model_name: str) -> str:
+    """Drop LiteLLM/OpenAI-style provider prefix for local server startup."""
+    if "/" not in model_name:
+        return model_name
+    parts: List[str] = model_name.split("/")
+    if parts[0] in {"openai", "anthropic", "google", "huggingface", "litellm"}:
+        return "/".join(parts[1:])
+    return model_name
+
+
 def resolve_llm_host() -> str:
     """Resolve hostname or IP for LLM ``base_url`` as seen from Docker workspaces.
 
@@ -212,6 +238,27 @@ def split_instances_file(instances_file: str, num_splits: int) -> List[str]:
     return split_files
 
 
+def _llm_http_timeout_seconds() -> int:
+    """Return OpenHands ``LLM`` per-request HTTP timeout in seconds.
+
+    Long sparse / hybrid forwards can exceed the SDK default (300s). This value
+    is written into the temp JSON as ``timeout`` so httpx/LiteLLM wait long enough.
+
+    Returns:
+        Parsed ``SWEBENCH_LLM_HTTP_TIMEOUT`` if set and valid, else ``5400``.
+        Clamped to at least ``60``.
+
+    Note:
+        Align with ``CONVERSATION_TIMEOUT`` / ``LITELLM_TIMEOUT`` for SWE runs.
+    """
+    raw: str = os.environ.get("SWEBENCH_LLM_HTTP_TIMEOUT", "5400").strip()
+    try:
+        parsed: int = int(raw)
+    except ValueError:
+        return 5400
+    return max(60, parsed)
+
+
 def create_llm_config(base_url: str, model_name: str) -> str:
     """Create a temporary OpenHands LLM JSON config for a per-GPU server.
 
@@ -228,15 +275,21 @@ def create_llm_config(base_url: str, model_name: str) -> str:
 
     Returns:
         Path to the written JSON config file (caller should delete when done).
+
+    Note:
+        ``timeout`` is set from ``_llm_http_timeout_seconds()`` so Docker agents
+        do not hit the OpenHands default 300s read timeout on slow generations.
     """
+    llm_timeout: int = _llm_http_timeout_seconds()
     config: dict[str, object] = {
         "model": model_name,
         "base_url": base_url,
         "api_key": "not-needed",
+        "timeout": llm_timeout,
         "temperature": 0.6,
         "top_p": 0.95,
         "top_k": 20,
-        "max_output_tokens": 32768,
+        "max_output_tokens": 8192,
         "litellm_extra_body": {
             "repetition_penalty": 1.0,
             "min_p": 0.0,
@@ -348,20 +401,36 @@ def start_servers(
     gpu_offset: int = 0,
     max_memory_per_gpu_gib: Optional[float] = None,
     is_hybrid: bool = False,
+    backend: str = "hf",
+    vllm_max_model_len: int = 131072,
+    vllm_gpu_memory_utilization: float = 0.90,
+    vllm_dtype: str = "auto",
+    vllm_language_model_only: bool = True,
+    vllm_reasoning_parser: str = "qwen3",
+    vllm_tool_call_parser: str = "qwen3_coder",
+    vllm_enable_auto_tool_choice: bool = True,
 ) -> List[subprocess.Popen]:
-    """Start one HF server process per replica, each using ``gpus_per_server`` GPUs.
+    """Start one model-server process per replica, each using ``gpus_per_server`` GPUs.
 
     Args:
-        model_name: HuggingFace model name.
+        model_name: Model identifier for local server startup.
         num_gpus: Total physical GPU count in this allocation (after ``gpu_offset``).
         gpus_per_server: GPUs visible to each server (``CUDA_VISIBLE_DEVICES`` length).
         base_port: Port for replica 0; replica ``k`` uses ``base_port + k``.
         output_dir: Directory for server logs.
         gpu_offset: First physical GPU index (replicas use contiguous blocks).
-        max_memory_per_gpu_gib: Optional cap passed to ``start_server.py`` for
+        max_memory_per_gpu_gib: Optional cap passed to HF ``start_server.py`` for
             ``device_map=auto`` (recommended on 80GB cards for large models).
         is_hybrid: If True, pass ``--is-hybrid`` to ``start_server.py`` (Qwen3.5-style
             hybrid linear attention in adapter paths).
+        backend: ``hf`` (scripts/start_server.py) or ``vllm`` (vllm serve).
+        vllm_max_model_len: vLLM ``--max-model-len``.
+        vllm_gpu_memory_utilization: vLLM ``--gpu-memory-utilization``.
+        vllm_dtype: vLLM ``--dtype`` value.
+        vllm_language_model_only: Add ``--language-model-only`` for text-only SWE tasks.
+        vllm_reasoning_parser: vLLM ``--reasoning-parser``.
+        vllm_tool_call_parser: vLLM ``--tool-call-parser``.
+        vllm_enable_auto_tool_choice: Add ``--enable-auto-tool-choice``.
 
     Returns:
         List of server ``Popen`` objects (length ``num_gpus // gpus_per_server``).
@@ -389,25 +458,52 @@ def start_servers(
         env["PYTHONPATH"] = str(project_root)
 
         print(
-            f"Starting server replica {server_rank} on port {port} "
+            f"Starting {backend} server replica {server_rank} on port {port} "
             f"(CUDA_VISIBLE_DEVICES={visible})..."
         )
 
-        server_python: str = resolve_server_python()
-
-        cmd = [
-            server_python,
-            "scripts/start_server.py",
-            "--device-map",
-            "auto",
-        ]
-        if max_memory_per_gpu_gib is not None:
-            cmd.extend(
-                ["--max-memory-per-gpu-gib", f"{float(max_memory_per_gpu_gib):g}"]
-            )
-        if is_hybrid:
-            cmd.append("--is-hybrid")
-        cmd.extend([model_name, str(port)])
+        if backend == "hf":
+            server_python: str = resolve_server_python()
+            cmd: List[str] = [
+                server_python,
+                "scripts/start_server.py",
+                "--device-map",
+                "auto",
+            ]
+            if max_memory_per_gpu_gib is not None:
+                cmd.extend(
+                    ["--max-memory-per-gpu-gib", f"{float(max_memory_per_gpu_gib):g}"]
+                )
+            if is_hybrid:
+                cmd.append("--is-hybrid")
+            cmd.extend([model_name, str(port)])
+        else:
+            cmd = [
+                resolve_vllm_bin(),
+                "serve",
+                model_name,
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(port),
+                "--tensor-parallel-size",
+                str(gpus_per_server),
+                "--max-model-len",
+                str(vllm_max_model_len),
+                "--gpu-memory-utilization",
+                f"{float(vllm_gpu_memory_utilization):g}",
+                "--dtype",
+                vllm_dtype,
+                "--trust-remote-code",
+                "--reasoning-parser",
+                vllm_reasoning_parser,
+                "--tool-call-parser",
+                vllm_tool_call_parser,
+            ]
+            if vllm_language_model_only:
+                cmd.append("--language-model-only")
+            if vllm_enable_auto_tool_choice:
+                cmd.append("--enable-auto-tool-choice")
 
         with open(log_file, "w") as log_handle:
             server_process: subprocess.Popen = subprocess.Popen(
@@ -720,6 +816,70 @@ def main():
             'such as Qwen3.5).'
         ),
     )
+    parser.add_argument(
+        '--backend',
+        type=str,
+        default='hf',
+        choices=('hf', 'vllm'),
+        help=(
+            "Model server backend. 'hf' launches scripts/start_server.py; "
+            "'vllm' launches `vllm serve`. Default: hf."
+        ),
+    )
+    parser.add_argument(
+        '--vllm-max-model-len',
+        type=int,
+        default=131072,
+        help='vLLM only: value for --max-model-len (default: 131072).',
+    )
+    parser.add_argument(
+        '--vllm-gpu-memory-utilization',
+        type=float,
+        default=0.90,
+        help='vLLM only: value for --gpu-memory-utilization (default: 0.90).',
+    )
+    parser.add_argument(
+        '--vllm-dtype',
+        type=str,
+        default='auto',
+        help='vLLM only: value for --dtype (default: auto).',
+    )
+    parser.add_argument(
+        '--vllm-language-model-only',
+        action='store_true',
+        default=True,
+        help='vLLM only: pass --language-model-only (enabled by default).',
+    )
+    parser.add_argument(
+        '--no-vllm-language-model-only',
+        action='store_false',
+        dest='vllm_language_model_only',
+        help='vLLM only: disable --language-model-only.',
+    )
+    parser.add_argument(
+        '--vllm-enable-auto-tool-choice',
+        action='store_true',
+        default=True,
+        help='vLLM only: pass --enable-auto-tool-choice (enabled by default).',
+    )
+    parser.add_argument(
+        '--no-vllm-enable-auto-tool-choice',
+        action='store_false',
+        dest='vllm_enable_auto_tool_choice',
+        help='vLLM only: disable --enable-auto-tool-choice.',
+    )
+    parser.add_argument(
+        '--vllm-reasoning-parser',
+        type=str,
+        default='qwen3',
+        help='vLLM only: value for --reasoning-parser (default: qwen3).',
+    )
+    parser.add_argument(
+        '--vllm-tool-call-parser',
+        type=str,
+        default='qwen3_coder',
+        help='vLLM only: value for --tool-call-parser (default: qwen3_coder).',
+    )
     parser.add_argument('--skip_validation', action='store_true', help='Skip environment validation')
 
     args = parser.parse_args()
@@ -771,8 +931,20 @@ def main():
     print(f"GPU offset: {args.gpu_offset} (using GPUs {args.gpu_offset}-{args.gpu_offset + args.num_gpus - 1})")
     print(f"Base port: {args.base_port}")
     print(f"swebench-infer --num-workers: {args.num_workers}")
+    print(f"Backend: {args.backend}")
     print(f"--is-hybrid (adapter): {args.is_hybrid}")
     print(f"LLM host (for Docker -> host): {llm_host}")
+    if args.backend == "vllm":
+        print(
+            "vLLM server flags: "
+            f"max_model_len={args.vllm_max_model_len}, "
+            f"gpu_memory_utilization={args.vllm_gpu_memory_utilization}, "
+            f"dtype={args.vllm_dtype}, "
+            f"language_model_only={args.vllm_language_model_only}, "
+            f"reasoning_parser={args.vllm_reasoning_parser}, "
+            f"tool_call_parser={args.vllm_tool_call_parser}, "
+            f"enable_auto_tool_choice={args.vllm_enable_auto_tool_choice}"
+        )
 
     # Track processes for cleanup
     servers = []
@@ -787,28 +959,27 @@ def main():
 
         # Step 2: Start servers
         print("\n=== Step 2: Starting servers ===")
-        server_py: str = resolve_server_python()
-        print(f"HF server Python (each start_server child): {server_py}")
-        if server_py == sys.executable:
-            print(
-                "  Tip: if the server log shows CUDA/driver errors or "
-                "'--device-map auto requires CUDA', run from a GPU-matched env, e.g.\n"
-                "    conda activate swebench311 && "
-                "export SPARSE_ATTENTION_SERVER_PYTHON=$(which python)\n"
-                "  then re-run this script (same shell)."
-            )
+        if args.backend == "hf":
+            server_py: str = resolve_server_python()
+            print(f"HF server Python (each start_server child): {server_py}")
+            if server_py == sys.executable:
+                print(
+                    "  Tip: if the server log shows CUDA/driver errors or "
+                    "'--device-map auto requires CUDA', run from a GPU-matched env, e.g.\n"
+                    "    conda activate swebench311 && "
+                    "export SPARSE_ATTENTION_SERVER_PYTHON=$(which python)\n"
+                    "  then re-run this script (same shell)."
+                )
+            else:
+                print(f"  (launcher Python was: {sys.executable})")
         else:
-            print(f"  (launcher Python was: {sys.executable})")
+            print(f"vLLM binary: {resolve_vllm_bin()}")
 
         # Strip provider prefix if present for server startup
         # (e.g., 'openai/Qwen/...' -> 'Qwen/...')
-        server_model_name = args.model_name
-        if '/' in server_model_name:
-            parts = server_model_name.split('/')
-            # Common LiteLLM/OpenHands provider prefixes
-            if parts[0] in ['openai', 'anthropic', 'google', 'huggingface', 'litellm']:
-                server_model_name = '/'.join(parts[1:])
-                print(f"ℹ Stripped provider prefix for server startup: {server_model_name}")
+        server_model_name: str = strip_provider_prefix(args.model_name)
+        if server_model_name != args.model_name:
+            print(f"ℹ Stripped provider prefix for server startup: {server_model_name}")
         
         servers = start_servers(
             server_model_name,
@@ -819,6 +990,14 @@ def main():
             args.gpu_offset,
             args.max_memory_per_gpu_gib,
             args.is_hybrid,
+            args.backend,
+            args.vllm_max_model_len,
+            args.vllm_gpu_memory_utilization,
+            args.vllm_dtype,
+            args.vllm_language_model_only,
+            args.vllm_reasoning_parser,
+            args.vllm_tool_call_parser,
+            args.vllm_enable_auto_tool_choice,
         )
 
         # Step 3: Create LLM configs
@@ -852,19 +1031,22 @@ def main():
                     all_done = False
                     print(f"GPU {gpu_id}: Running (PID: {job.pid})")
                     server_log: Path = output_dir / f"server_rank_{gpu_id}.log"
-                    n_tokens: Optional[int] = latest_context_token_count_from_server_log(
-                        server_log
-                    )
-                    if n_tokens is not None:
-                        print(
-                            f"        latest request context (from {server_log.name}): "
-                            f"{n_tokens} tokens"
+                    if args.backend == "hf":
+                        n_tokens: Optional[int] = latest_context_token_count_from_server_log(
+                            server_log
                         )
+                        if n_tokens is not None:
+                            print(
+                                f"        latest request context (from {server_log.name}): "
+                                f"{n_tokens} tokens"
+                            )
+                        else:
+                            print(
+                                f"        latest request context (from {server_log.name}): "
+                                f"(no Context tokens line yet)"
+                            )
                     else:
-                        print(
-                            f"        latest request context (from {server_log.name}): "
-                            f"(no Context tokens line yet)"
-                        )
+                        print(f"        server log: {server_log.name}")
                 else:
                     exit_code = job.returncode
                     status = "✓" if exit_code == 0 else f"✗ (exit code: {exit_code})"

@@ -14,20 +14,12 @@ Quickstart (single GPU, one replica):
         --workers 4 \\
         --subset verified --split test
 
-Multi-GPU (8 GPUs, two TP4 replicas — recommended for Qwen3.5-27B on H100s):
-    python scripts/run_mini_swebench.py \\
-        --model Qwen/Qwen3.5-27B \\
-        --output benchmarks/mini/runs/my_run \\
-        --num-gpus 8 --gpus-per-server 4 \\
-        --workers 8 \\
-        --subset verified --split test
-
-Multi-GPU (8 GPUs, one TP8 replica):
+Multi-GPU (8 GPUs, one TP8 replica — recommended for Qwen3.5-27B on H100s):
     python scripts/run_mini_swebench.py \\
         --model Qwen/Qwen3.5-27B \\
         --output benchmarks/mini/runs/my_run \\
         --num-gpus 8 --gpus-per-server 8 \\
-        --workers 16 \\
+        --workers 8 \\
         --subset verified --split test
 
 Filter to specific instances:
@@ -53,10 +45,12 @@ After the run:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -117,6 +111,45 @@ def wait_for_port(port: int, timeout: int, *, log_path: Optional[Path] = None) -
 
 
 # ---------------------------------------------------------------------------
+# Background Docker image pruner
+# ---------------------------------------------------------------------------
+
+def _start_docker_pruner(interval: int = 120) -> threading.Thread:
+    """
+    Daemon thread that prunes finished SWE-bench Docker images every `interval`
+    seconds.  docker rmi silently refuses to remove images that are still
+    backing a running container, so this is safe to run concurrently with
+    mini-swe-agent workers.
+    """
+    def _loop() -> None:
+        while True:
+            time.sleep(interval)
+            try:
+                # dangling images (no tag)
+                subprocess.run(
+                    ["docker", "image", "prune", "-f", "--filter", "dangling=true"],
+                    capture_output=True,
+                )
+                # SWE-bench eval images that are not currently in use
+                result = subprocess.run(
+                    ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
+                    capture_output=True, text=True,
+                )
+                for img in result.stdout.splitlines():
+                    if "swebench/sweb" in img or "sweagent/sweb" in img:
+                        subprocess.run(
+                            ["docker", "rmi", img],
+                            capture_output=True,
+                        )
+            except Exception:
+                pass
+
+    t = threading.Thread(target=_loop, daemon=True, name="docker-pruner")
+    t.start()
+    return t
+
+
+# ---------------------------------------------------------------------------
 # vLLM server management
 # ---------------------------------------------------------------------------
 
@@ -133,6 +166,7 @@ def start_vllm_servers(
     dtype: str,
     reasoning_parser: str,
     tool_call_parser: str,
+    hf_overrides: str = "",
 ) -> list[subprocess.Popen]:
     """Start one vLLM server per replica; each server gets gpus_per_server GPUs."""
     num_servers = num_gpus // gpus_per_server
@@ -159,6 +193,8 @@ def start_vllm_servers(
         ]
         if reasoning_parser and reasoning_parser != "none":
             cmd += ["--reasoning-parser", reasoning_parser]
+        if hf_overrides:
+            cmd += ["--hf-overrides", hf_overrides]
 
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = visible
@@ -209,6 +245,9 @@ def run_mini_workers(
 
     Each process gets its own output subdirectory and points at a different port.
     Results are merged into output_dir/preds.json afterwards.
+
+    Corrupt or empty replica preds.json files are deleted before launch so that
+    mini can start fresh for those replicas without skipping all instances.
     """
     num_replicas = num_gpus // gpus_per_server
     jobs: list[subprocess.Popen] = []
@@ -223,6 +262,14 @@ def run_mini_workers(
         replica_out.mkdir(parents=True, exist_ok=True)
         log_file = output_dir / f"mini_rank_{rank}.log"
 
+        # Remove corrupt/empty preds.json so mini doesn't crash on startup
+        replica_preds = replica_out / "preds.json"
+        if replica_preds.exists():
+            raw = replica_preds.read_text().strip()
+            if not raw:
+                print(f"  [cleanup] Removing empty preds.json in replica_{rank}")
+                replica_preds.unlink()
+
         # hosted_vllm/<model_id> is the LiteLLM provider prefix for local vLLM
         litellm_model = f"hosted_vllm/{model}"
         api_base = f"http://127.0.0.1:{port}/v1"
@@ -234,15 +281,19 @@ def run_mini_workers(
             "--output", str(replica_out),
             "--workers", str(workers_per_replica),
             "-c", str(config_path.resolve()),
-            f"-c", f"model.model_name={litellm_model}",
-            f"-c", f"model.model_kwargs.api_base={api_base}",
+            "-c", f"model.model_name={litellm_model}",
+            "-c", f"model.model_kwargs.api_base={api_base}",
         ]
         if no_thinking:
             cmd += ["-c", "model.model_kwargs.extra_body.chat_template_kwargs.enable_thinking=false"]
         if filter_spec:
             cmd += ["--filter", filter_spec]
+            
+        # Stagger slices so replicas never overlap
         if slice_spec:
             cmd += ["--slice", slice_spec]
+        else:
+            cmd += ["--slice", f"{rank}::{num_replicas}"]
 
         print(f"Starting mini worker {rank} → port {port}, output: {replica_out}")
         with open(log_file, "w") as fh:
@@ -259,18 +310,27 @@ def run_mini_workers(
 
 
 def merge_preds(output_dir: Path, num_replicas: int) -> Path:
-    """Merge replica preds.json files into a single top-level preds.json."""
-    import json
-
+    """
+    Merge replica preds.json files into a single top-level preds.json.
+    Skips empty or corrupt replica files gracefully instead of crashing.
+    """
     merged: dict = {}
     for rank in range(num_replicas):
         replica_preds = output_dir / f"replica_{rank}" / "preds.json"
-        if replica_preds.exists():
-            data = json.loads(replica_preds.read_text())
-            merged.update(data)
-            print(f"  ✓ Replica {rank}: {len(data)} predictions")
-        else:
+        if not replica_preds.exists():
             print(f"  ✗ Replica {rank}: no preds.json found")
+            continue
+        raw = replica_preds.read_text().strip()
+        if not raw:
+            print(f"  ✗ Replica {rank}: preds.json is empty — skipping")
+            continue
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            print(f"  ✗ Replica {rank}: preds.json is corrupt ({exc}) — skipping")
+            continue
+        merged.update(data)
+        print(f"  ✓ Replica {rank}: {len(data)} predictions")
 
     final = output_dir / "preds.json"
     final.write_text(json.dumps(merged, indent=2))
@@ -309,6 +369,9 @@ def main() -> None:
                    help="vLLM --reasoning-parser. Defaults to 'qwen3' for Qwen3/3.5 models, "
                         "empty (disabled) for all others. Pass 'none' to force disable.")
     p.add_argument("--tool-call-parser", default="qwen3_coder", help="vLLM --tool-call-parser (default: qwen3_coder).")
+    p.add_argument("--hf-overrides", default="",
+                   help="JSON string passed to vLLM --hf-overrides. Use to enable YaRN for "
+                        "Qwen2.5-Coder-32B beyond its native 32K context.")
 
     # mini / benchmark
     p.add_argument("--output", required=True, help="Output directory for results.")
@@ -343,6 +406,15 @@ def main() -> None:
     p.add_argument("--no-thinking", action="store_true",
                    help="Disable thinking mode (set enable_thinking=false). Use for Qwen2.5 and "
                         "other models that do not support the thinking chat template kwarg.")
+    p.add_argument("--docker-prune-interval", type=int, default=120,
+                   help="Seconds between background Docker image pruning (default: 120). "
+                        "Set to 0 to disable pruning.")
+    p.add_argument(
+        "--repair-preds-from-trajs",
+        action="store_true",
+        help="After merge, run scripts/repair_mini_preds_from_trajs.py --force-all-from-traj so "
+             "each model_patch matches the last git diff in the trajectory (fixes bad mini extractions).",
+    )
 
     args = p.parse_args()
 
@@ -414,6 +486,11 @@ def main() -> None:
     print(f"  Output:       {output_dir}")
     print("=" * 70)
 
+    # Start background Docker pruner to prevent disk filling with SWE-bench images
+    if args.docker_prune_interval > 0:
+        _start_docker_pruner(interval=args.docker_prune_interval)
+        print(f"\n[pruner] Background Docker image pruner started (interval: {args.docker_prune_interval}s)")
+
     servers: list[subprocess.Popen] = []
     mini_jobs: list[subprocess.Popen] = []
 
@@ -435,6 +512,7 @@ def main() -> None:
                 dtype=args.dtype,
                 reasoning_parser=args.reasoning_parser,
                 tool_call_parser=args.tool_call_parser,
+                hf_overrides=args.hf_overrides,
             )
 
         # Step 2: Start mini workers
@@ -473,6 +551,24 @@ def main() -> None:
         # Step 4: Merge preds
         print("\n=== Step 4: Merging predictions ===")
         final_preds = merge_preds(output_dir, num_replicas)
+
+        if args.repair_preds_from_trajs:
+            print("\n=== Step 4b: Repairing preds from trajectories ===")
+            repair_script = _project_root() / "scripts" / "repair_mini_preds_from_trajs.py"
+            rc = subprocess.run(
+                [
+                    sys.executable,
+                    str(repair_script),
+                    "--preds",
+                    str(final_preds),
+                    "--output-dir",
+                    str(output_dir),
+                    "--force-all-from-traj",
+                ],
+                cwd=str(_project_root()),
+            ).returncode
+            if rc != 0:
+                print(f"  Warning: repair script exited with code {rc}")
 
         print("\n=== Done! ===")
         print(f"  Predictions: {final_preds}")

@@ -268,8 +268,31 @@ pytest -m integration   # Integration tests
 
 ```
 
+
 ## 📖 Documentation
 
 - [Adapters Module](sparse_attention_hub/adapters/README.md) - Model integration and HuggingFace support
 - [Research Attention](sparse_attention_hub/sparse_attention/research_attention/README.md) - Sparse attention mechanisms and maskers
 - [Ray Tune Optimization](benchmark/raytune/README.md) - Hyperparameter optimization and search
+
+
+## Research 
+
+If you find this repository useful in your research, please consider citing our work supported by this repository
+```
+@inproceedings{
+desai2025hashattention,
+title={HashAttention: Semantic Sparsity for Faster Inference},
+author={Aditya Desai and Shuo Yang and Alejandro Cuadron and Matei Zaharia and Joseph E. Gonzalez and Ion Stoica},
+booktitle={Forty-second International Conference on Machine Learning},
+year={2025},
+url={https://openreview.net/forum?id=Em2oaXd8Dc}
+}
+
+@inproceedings{desai2026vattention,
+  title={vAttention: Verified Sparse Attention via Sampling},
+  author={Desai, Aditya and Agrawal, Kumar Krishna and Yang, Shuo and Cuadron, Alejandro and Schroeder, Luis Gaspar and Zaharia, Matei and Gonzalez, Joseph E and Stoica, Ion},
+  booktitle={The Fourteenth International Conference on Learning Representations},
+  year={2026}
+}
+```

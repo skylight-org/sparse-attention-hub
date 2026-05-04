@@ -249,11 +249,15 @@ def main() -> None:
     try:
         with tempfile.TemporaryDirectory(prefix="mini_swe_hf_sparse_") as tmp_dir:
             tmp_path = Path(tmp_dir)
-            cfg_path = tmp_path / "mini_config.json"
+            cfg_path = tmp_path / "mini_config.yaml"
             registry_path = tmp_path / "model_registry.json"
             cfg_path.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
             registry_path.write_text("{}", encoding="utf-8")
 
+            # Mini-swe-agent v2.x AgentConfig requires system_template /
+            # instance_template / etc. — pull them in from the bundled
+            # benchmarks/swebench.yaml (resolved via builtin config search).
+            mini_cmd.extend(["-c", "swebench"])
             mini_cmd.extend(["-c", str(cfg_path)])
             mini_cmd.extend(["-c", f"model.model_name={client_model_name}"])
             mini_cmd.extend(["-c", f"model.model_kwargs.api_base={api_base}"])

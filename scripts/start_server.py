@@ -194,12 +194,13 @@ def _dense_prefill_attention_bhld(
 # ==============================================================================
 
 # ``None``: fully dense HuggingFace attention. Default: sink + local window + OracleTopK
-# at 20% heavy mass for research sparse decode.
+# at heavy mass set by SAH_HEAVY_SIZE env var (default 0.2 = 20%).
+_HEAVY_SIZE = float(os.environ.get("SAH_HEAVY_SIZE", "0.2"))
 SPARSE_CONFIG: Optional[ResearchAttentionConfig] = ResearchAttentionConfig(
     masker_configs=[
         SinkMaskerConfig(sink_size=128),
         LocalMaskerConfig(window_size=128),
-        OracleTopKConfig(heavy_size=0.2, search_space={}),
+        OracleTopKConfig(heavy_size=_HEAVY_SIZE, search_space={}),
     ],
 )
 # ==============================================================================
@@ -774,9 +775,9 @@ def main():
         print(f"Error loading model: {e}")
         sys.exit(1)
     
-    print(f"Starting server on 0.0.0.0:{port}...")
-        
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    print(f"Starting server on 127.0.0.1:{port}...")
+
+    uvicorn.run(app, host="127.0.0.1", port=port)
 
 if __name__ == "__main__":
     main()
